@@ -22,7 +22,9 @@ int dg_end(void);                               // DGEND
 int dg_pos(int x, int y);                       // DGPOS
 int dg_rect(int x, int y, int w, int h);        // DGRECT
 int dg_scale(int x, int y, int a);              // DGSCALEANDANGLE
-int dg_copy(int id);                            // DGGCOPY
+int dg_copy(int id);                            // DGGCOPY (flags = 0)
+int dg_copyf(int id, int flags);                // DGGCOPY with mirror/center
+                                                // flags (title uses 1/2/8)
 int dg_texture(int id);                         // DGTEXTURE
 int dg_loadmem(const void *b, int s, int n);    // DGLOADMEMORY (b=BMP bytes, s=size, n=slot)
 int dg_createprim(int n);                       // DGCREATEPRIMITIVE

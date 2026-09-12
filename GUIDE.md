@@ -22,8 +22,19 @@ All work below was executed and verified on 2026-09-11/12.
 - [x] (e) input (`ewdx_input`: touch stick/buttons + keys + pad -> joyg mask;
       20-check host test green), text (`ewdx_text`: SDL_ttf string cache +
       SJIS table), ovplay `cmd_0_*` EXTCMD hook (HPIDAT/typeinfo)
-- [ ] `vload/vsave` live restore, `dialog/end` shim, SDL2 `.so` build,
-      first APK link
+- [x] (f1) STEP-F part 1: `vload/vsave` live restore (name-keyed
+      INT/DOUBLE/STR, 32-bit hspv writer), minimal EXTCMD/EXTSYSVAR shims
+      (`ewdx_extcmd`: screen/title/cls/dialog/mouse/getkey/stick/mes/pos/font
+      + ginfo/dirinfo/sysinfo), boot probe + `start.ax` APK staging
+      (`ewdx_boot`), `HSP64` + zero-warning gate on all 13 TUs,
+      `assembleDebug` green with `start.ax` bundled
+- [x] (f2) STEP-F part 2: OpenHSP VM linked (`hsp3core`, 17 TUs) +
+      SJIS `ewdx_supio` port (HSPUTF8 stays OFF) + AssetManager `data/`
+      bootstrap + SJIS-safe AX `\`->`/` patch + `Hsp3::Reset` boot +
+      `code_execcmd` SDL pump + `DGGCOPY` flags; `assembleDebug` green,
+      `start.ax` bundled, HSP symbols verified in `libmain.so`
+- [ ] On-device run to title (needs game `data/` tree + device; first
+      launch unpacks `data/`, logcat `ewdx:` traces probe -> VM ready)
 
 ## 1. Environment (build host)
 

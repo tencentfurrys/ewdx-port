@@ -1,6 +1,7 @@
 # APK asset staging (step 3).
 #
 # At assemble time, populate this directory EXACTLY as:
+#   assets/start.ax     <- artifacts/start_ax_dump.bin (764,226 B, HSP3 v3.01)
 #   assets/data/map/    <- game data/map/*.map    (21 files)
 #   assets/data/mold/   <- game data/mold/*.mol   (62 files)
 #   assets/data/mot/    <- game data/mot/*.mot    (138 files)

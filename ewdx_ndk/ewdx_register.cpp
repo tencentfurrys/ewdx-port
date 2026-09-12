@@ -328,9 +328,12 @@ static bool rc_sort_lt_desc(const EwdxSortEnt &a, const EwdxSortEnt &b) {
 }
 
 // ------------------------------------------------- vload/vsave session ---
-// Lifecycle + validation only. Live-var restore/extract reuses ewdx_hspv.h
-// and lands with the runtime hookup (STEP-D): vload_get/vsave_put currently
-// consume their var arg and report success so boot reaches the title.
+// Live restore/extract keyed by var NAME (Hspda.cpp parity: varload_get
+// matches hei->HspFunc_varname(varid) against the hspv entry names).
+// File layout is the 32-bit x86 hspv image (see ewdx_hspv.h); host PVal may
+// be 64-bit, so payloads are converted, never struct-copied. Covers
+// INT/DOUBLE (raw storage) + STR (per-element [FX,size,bytes]); LABEL and
+// STRUCT restore as no-op success (not used by save.dat/map/mot flows).
 
 typedef struct { const unsigned char *img; int len; int active; } EwdxVLoad;
 static EwdxVLoad rc_vload;
@@ -338,6 +341,293 @@ static EwdxVLoad rc_vload;
 typedef struct { int active; } EwdxVSave;
 static EwdxVSave rc_vsave;
 static char rc_vsave_path[1024];  // resolved <filesDir>/... target for STEP-F
+static std::vector<int> rc_vsave_ids;  // varids from vsave_put (drained at end)
+
+// Find an hspv entry by var name in the open vload image.
+static const EwdxHspvEntry *rc_vload_find(const char *name) {
+    const EwdxHspvEntry *ents = NULL;
+    int n, i;
+    if (!rc_vload.active || rc_vload.img == NULL || name == NULL) return NULL;
+    n = ewdx_hspv_vars(rc_vload.img, rc_vload.len, &ents);
+    if (n <= 0 || ents == NULL) return NULL;
+    for (i = 0; i < n; i++) {
+        const char *en = ewdx_hspv_name(rc_vload.img, &ents[i]);
+        if (en != NULL && strcmp(en, name) == 0) return &ents[i];
+    }
+    return NULL;
+}
+
+// Restore one live var from its hspv entry. Returns 0 ok / <0 fail.
+static int rc_vload_restore(PVal *pv, int varid) {
+    char *name;
+    const EwdxHspvEntry *e;
+    const uint8_t *payload;
+    int flag, i, nelem;
+    if (pv == NULL || varid < 0) return -1;
+    name = code_getdebug_varname(varid);
+    if (name == NULL || name[0] == '\0') return -1;
+    e = rc_vload_find(name);
+    if (e == NULL) {
+        EWDX_LOGW("vload: no entry for '%s' (keeps live value)", name);
+        return 0;  // missing entry is not fatal (fresh save slots)
+    }
+    payload = ewdx_hspv_data(rc_vload.img, e);
+    if (payload == NULL) return -1;
+    flag = (int)e->master.flag;
+    if (flag != HSPVAR_FLAG_INT && flag != HSPVAR_FLAG_DOUBLE &&
+        flag != HSPVAR_FLAG_STR) {
+        EWDX_LOGW("vload: '%s' type %d unsupported (keeps live)", name, flag);
+        return 0;
+    }
+    // Element count from the stored lens (len[1..4] product, 1-D usually).
+    nelem = 1;
+    for (i = 1; i <= 4; i++) {
+        uint32_t l = e->master.len[i];
+        if (l == 0) l = 1;
+        // len[1] is the real count; higher dims are 1 in save files.
+        if (i == 1) nelem = (int)l;
+    }
+    if (nelem <= 0) nelem = 1;
+    if (flag == HSPVAR_FLAG_INT || flag == HSPVAR_FLAG_DOUBLE) {
+        int esz = (flag == HSPVAR_FLAG_INT) ? 4 : 8;
+        uint32_t want = (uint32_t)(nelem * esz);
+        // Resize to the stored shape, then memcpy the raw storage.
+        if ((uint32_t)e->master.size < want) return -1;
+        {
+            int l1 = (int)e->master.len[1];
+            int l2 = (int)e->master.len[2];
+            int l3 = (int)e->master.len[3];
+            int l4 = (int)e->master.len[4];
+            if (l1 <= 0) l1 = nelem;
+            if (l2 <= 0) l2 = 1;
+            if (l3 <= 0) l3 = 1;
+            if (l4 <= 0) l4 = 1;
+            HspVarCoreClear(pv, flag);
+            HspVarCoreDim(pv, flag, l1, l2, l3, l4);
+        }
+        {
+            void *dst = HspVarCorePtrAPTR(pv, 0);
+            int cap = 0;
+            HspVarCoreGetBlockSize(pv, (PDAT *)dst, &cap);
+            if (cap < (int)want || dst == NULL) return -1;
+            memcpy(dst, payload, want);
+        }
+        return 0;
+    }
+    // STR: payload is nelem x [u32 FX][u32 size][bytes].
+    {
+        const uint8_t *p = payload;
+        const uint8_t *end = payload + e->master.size;
+        HspVarCoreClear(pv, HSPVAR_FLAG_STR);
+        HspVarCoreDim(pv, HSPVAR_FLAG_STR, nelem, 1, 1, 1);
+        for (i = 0; i < nelem; i++) {
+            uint32_t tag, sz;
+            if (p + 8 > end) return -1;
+            memcpy(&tag, p, 4);
+            memcpy(&sz, p + 4, 4);
+            p += 8;
+            if (tag != EWDX_HSPV_FX) return -1;
+            if (p + sz > end) return -1;
+            {
+                // code_setva copies the string (NUL-terminated slice).
+                char *tmp = (char *)malloc((size_t)sz + 1u);
+                if (tmp == NULL) return -1;
+                memcpy(tmp, p, sz);
+                tmp[sz] = '\0';
+                code_setva(pv, (APTR)i, HSPVAR_FLAG_STR, tmp);
+                free(tmp);
+            }
+            p += sz;
+        }
+        return 0;
+    }
+}
+
+// Serialize the accumulated vsave_put varids to an hspv file (32-bit layout
+// so Windows + Android images stay interchangeable). Returns 0 ok / <0 fail.
+static int rc_vsave_write(const char *path) {
+    FILE *fp;
+    uint32_t n, i;
+    uint32_t pt_data;
+    // First pass: gather per-var blobs to size the data block.
+    typedef struct { const char *name; int varid; uint32_t nsize; uint32_t dsize; } VSaveEnt;
+    std::vector<VSaveEnt> list;
+    if (path == NULL || path[0] == '\0') return -1;
+    if (rc_ctx == NULL) return -1;
+    for (i = 0; i < (uint32_t)rc_vsave_ids.size(); i++) {
+        int varid = rc_vsave_ids[i];
+        PVal *pv;
+        char *name;
+        VSaveEnt ve;
+        if (varid < 0 || varid >= rc_ctx->hsphed->max_val) continue;
+        pv = &rc_ctx->mem_var[varid];
+        name = code_getdebug_varname(varid);
+        if (name == NULL || name[0] == '\0') continue;
+        if (pv->flag != HSPVAR_FLAG_INT && pv->flag != HSPVAR_FLAG_DOUBLE &&
+            pv->flag != HSPVAR_FLAG_STR)
+            continue;  // LABEL/STRUCT not used by saves; skip loudly below
+        ve.name = name;
+        ve.varid = varid;
+        ve.nsize = (uint32_t)(strlen(name) + 1);
+        if (pv->flag == HSPVAR_FLAG_STR) {
+            int ne = HspVarCoreCountElems(pv);
+            int k;
+            uint32_t ds = 0;
+            if (ne <= 0) ne = 1;
+            for (k = 0; k < ne; k++) {
+                PDAT *pd = HspVarCorePtrAPTR(pv, (APTR)k);
+                int bsz = 0;
+                HspVarCoreGetBlockSize(pv, pd, &bsz);
+                if (bsz < 0) bsz = 0;
+                ds += 8u + (uint32_t)bsz;
+            }
+            ve.dsize = ds;
+        } else {
+            int cap = 0;
+            void *ptr = HspVarCorePtrAPTR(pv, 0);
+            HspVarCoreGetBlockSize(pv, (PDAT *)ptr, &cap);
+            if (cap < 0) cap = 0;
+            ve.dsize = (uint32_t)cap;
+        }
+        list.push_back(ve);
+    }
+    n = (uint32_t)list.size();
+    pt_data = 16u + n * 64u;
+    fp = fopen(path, "wb");
+    if (fp == NULL) {
+        EWDX_LOGE("vsave: cannot write '%s'", path);
+        return -1;
+    }
+    {
+        // header
+        uint32_t magic = EWDX_HSPV_MAGIC, ver = EWDX_HSPV_VER;
+        fwrite(&magic, 4, 1, fp);
+        fwrite(&ver, 4, 1, fp);
+        fwrite(&n, 4, 1, fp);
+        fwrite(&pt_data, 4, 1, fp);
+    }
+    {
+        // entries + data block assembled in memory first
+        std::vector<uint8_t> names;
+        std::vector<uint8_t> payloads;
+        uint32_t j;
+        for (j = 0; j < n; j++) names.insert(names.end(), list[j].nsize, 0);
+        {
+            uint32_t at = 0;
+            for (j = 0; j < n; j++) {
+                memcpy(&names[at], list[j].name, list[j].nsize);
+                at += list[j].nsize;
+            }
+        }
+        for (j = 0; j < n; j++) {
+            PVal *pv = &rc_ctx->mem_var[list[j].varid];
+            if (pv->flag == HSPVAR_FLAG_STR) {
+                int ne = HspVarCoreCountElems(pv);
+                int k;
+                if (ne <= 0) ne = 1;
+                for (k = 0; k < ne; k++) {
+                    PDAT *pd = HspVarCorePtrAPTR(pv, (APTR)k);
+                    int bsz = 0;
+                    void *blk = NULL;
+                    uint32_t fx = EWDX_HSPV_FX;
+                    uint32_t sz;
+                    // fetch block bytes (GetBlockSize returns ptr+size)
+                    blk = HspVarCoreGetBlockSize(pv, pd, &bsz);
+                    if (bsz < 0) bsz = 0;
+                    // NOTE: GetBlockSize returns the block ptr for STR and
+                    // sets size; pd already points at the element.
+                    {
+                        uint8_t *bytes = (uint8_t *)HspVarCorePtrAPTR(pv, (APTR)k);
+                        (void)blk;
+                        sz = (uint32_t)bsz;
+                        payloads.insert(payloads.end(), (uint8_t *)&fx, (uint8_t *)&fx + 4);
+                        payloads.insert(payloads.end(), (uint8_t *)&sz, (uint8_t *)&sz + 4);
+                        if (sz > 0) payloads.insert(payloads.end(), bytes, bytes + sz);
+                    }
+                }
+            } else {
+                int cap = 0;
+                uint8_t *ptr = (uint8_t *)HspVarCorePtrAPTR(pv, 0);
+                HspVarCoreGetBlockSize(pv, (PDAT *)ptr, &cap);
+                if (cap < 0) cap = 0;
+                if (cap > 0) payloads.insert(payloads.end(), ptr, ptr + cap);
+            }
+        }
+        // emit entries with data-relative offsets
+        {
+            uint32_t noff = 0, poff = (uint32_t)names.size();
+            for (j = 0; j < n; j++) {
+                PVal *pv = &rc_ctx->mem_var[list[j].varid];
+                uint32_t opt = 0, enc = 0;
+                int16_t flag = (int16_t)pv->flag;
+                int16_t mode = (int16_t)pv->mode;
+                uint32_t len[5];
+                uint32_t size;
+                uint32_t pt = 0, master = 0;
+                uint16_t support = pv->support;
+                int16_t arraycnt = pv->arraycnt;
+                uint32_t offset = 0, arraymul = 0;
+                int q;
+                uint32_t my_nsize = list[j].nsize;
+                // payload size for THIS var = slice of payloads stream:
+                // recompute deterministically (same order as above).
+                uint32_t my_dsize;
+                if (pv->flag == HSPVAR_FLAG_STR) {
+                    int ne = HspVarCoreCountElems(pv);
+                    int k;
+                    my_dsize = 0;
+                    if (ne <= 0) ne = 1;
+                    for (k = 0; k < ne; k++) {
+                        PDAT *pd = HspVarCorePtrAPTR(pv, (APTR)k);
+                        int bsz = 0;
+                        HspVarCoreGetBlockSize(pv, pd, &bsz);
+                        if (bsz < 0) bsz = 0;
+                        my_dsize += 8u + (uint32_t)bsz;
+                    }
+                } else {
+                    int cap = 0;
+                    void *ptr = HspVarCorePtrAPTR(pv, 0);
+                    HspVarCoreGetBlockSize(pv, (PDAT *)ptr, &cap);
+                    if (cap < 0) cap = 0;
+                    my_dsize = (uint32_t)cap;
+                }
+                for (q = 0; q < 5; q++) len[q] = (uint32_t)((q < 5) ? pv->len[q] : 0);
+                // STR storage: size field = payload bytes (flex stream)
+                size = my_dsize;
+                if (pv->flag != HSPVAR_FLAG_STR) {
+                    // fixed storage: size = raw bytes
+                    int cap = 0;
+                    void *ptr = HspVarCorePtrAPTR(pv, 0);
+                    HspVarCoreGetBlockSize(pv, (PDAT *)ptr, &cap);
+                    if (cap < 0) cap = 0;
+                    size = (uint32_t)cap;
+                }
+                fwrite(&noff, 4, 1, fp);
+                fwrite(&poff, 4, 1, fp);
+                fwrite(&opt, 4, 1, fp);
+                fwrite(&enc, 4, 1, fp);
+                fwrite(&flag, 2, 1, fp);
+                fwrite(&mode, 2, 1, fp);
+                fwrite(len, 4, 5, fp);
+                fwrite(&size, 4, 1, fp);
+                fwrite(&pt, 4, 1, fp);
+                fwrite(&master, 4, 1, fp);
+                fwrite(&support, 2, 1, fp);
+                fwrite(&arraycnt, 2, 1, fp);
+                fwrite(&offset, 4, 1, fp);
+                fwrite(&arraymul, 4, 1, fp);
+                noff += my_nsize;
+                poff += my_dsize;
+                (void)my_nsize;
+            }
+        }
+        if (!names.empty()) fwrite(&names[0], 1, names.size(), fp);
+        if (!payloads.empty()) fwrite(&payloads[0], 1, payloads.size(), fp);
+    }
+    fclose(fp);
+    EWDX_LOGW("vsave: wrote %u vars -> '%s'", n, path);
+    return 0;
+}
 
 // ------------------------------------------------------------ dmm bank ---
 // Lifecycle only (dmmini/dmmbye). Voice mix/streaming is STEP-D (OpenSL ES
@@ -354,7 +644,6 @@ static int rc_dg_4i(EwdxCmd id, int a, int b, int c, int d) {
     case EWDX_DGBUFFER: return dg_buffer(a, b, c);  // d reserved, always 0
     case EWDX_DGGSEL: return dg_select(a);
     case EWDX_DGBLENDMODE: return dg_blend(a);
-    case EWDX_DGCOPY: return dg_copy(a);
     case EWDX_DGTEXTURE: return dg_texture(a);
     case EWDX_DGCREATEPRIM: return dg_createprim(a);
     case EWDX_DGPOS: return dg_pos(a, b);
@@ -391,7 +680,6 @@ static int rc_cmdfunc_dllcmd(int cmd) {
     case EWDX_DGBUFFER:
     case EWDX_DGGSEL:
     case EWDX_DGBLENDMODE:
-    case EWDX_DGCOPY:
     case EWDX_DGTEXTURE:
     case EWDX_DGCREATEPRIM:
     case EWDX_DGPOS:
@@ -401,6 +689,11 @@ static int rc_cmdfunc_dllcmd(int cmd) {
         int a = code_getdi(0), b = code_getdi(0);
         int c = code_getdi(0), d = code_getdi(0);
         return rc_stat(rc_dg_4i(id, a, b, c, d));
+    }
+    case EWDX_DGCOPY: {  // (id, flags): title passes 1/2/8 (center, scale, flip)
+        int a = code_getdi(0), b = code_getdi(0);
+        code_getdi(0); code_getdi(0);
+        return rc_stat(dg_copyf(a, b));
     }
     case EWDX_DGCLEAR: {
         code_getdi(0); code_getdi(0); code_getdi(0); code_getdi(0);
@@ -533,26 +826,33 @@ static int rc_cmdfunc_dllcmd(int cmd) {
         code_setva(pv, ap, HSPVAR_FLAG_INT, &res);
         return rc_stat(0);
     }
-    // --- hspda vload/vsave (Hspda.cpp pull parity; STEP-D: live restore) ---
+    // --- hspda vload/vsave (Hspda.cpp pull parity; live restore) ---
     case EWDX_VSAVESTART: {
         rc_vsave.active = 1;
+        rc_vsave_ids.clear();
         return rc_stat(0);
     }
     case EWDX_VSAVEPUT: {
         PVal *pv;
         (void)code_getva(&pv);
-        (void)pv;
         if (!rc_vsave.active) return rc_stat(-2);
-        return rc_stat(0);  // STEP-D: serialize via ewdx_hspv layout
+        // Record the varid; values are serialized at vsave_end (same tick,
+        // no intervening writes in label_035, so end-time read is exact).
+        {
+            int varid = code_getdebug_varid(pv);
+            if (varid < 0) return rc_stat(-2);
+            rc_vsave_ids.push_back(varid);
+        }
+        return rc_stat(0);
     }
     case EWDX_VSAVEEND: {
         char *fn = code_gets();
-        // progress lands in <filesDir>/save.dat once live-var serialization
-        // arrives (STEP-F); stash the resolved path for that writer now.
+        int rc;
         ewdx_resolve(fn, rc_vsave_path, sizeof(rc_vsave_path));
-        EWDX_LOGW("vsave target '%s' (image write lands in STEP-F)", rc_vsave_path);
+        rc = rc_vsave_write(rc_vsave_path);
         rc_vsave.active = 0;
-        return rc_stat(0);  // STEP-F: write image assembled from vsave_put
+        rc_vsave_ids.clear();
+        return rc_stat(rc);
     }
     case EWDX_VLOADSTART: {
         char fnbuf[1024];
@@ -575,10 +875,12 @@ static int rc_cmdfunc_dllcmd(int cmd) {
     }
     case EWDX_VLOADGET: {
         PVal *pv;
+        int varid, rc;
         (void)code_getva(&pv);
-        (void)pv;
         if (!rc_vload.active) return rc_stat(-1);
-        return rc_stat(0);  // STEP-D: typed restore keyed by var name
+        varid = code_getdebug_varid(pv);
+        rc = rc_vload_restore(pv, varid);
+        return rc_stat(rc);
     }
     case EWDX_VLOADEND: {
         if (rc_vload.active && rc_vload.img != NULL) free((void *)rc_vload.img);
@@ -600,6 +902,7 @@ static int rc_cmdfunc_dllcmd(int cmd) {
         if (rc_vload.active && rc_vload.img != NULL) free((void *)rc_vload.img);
         rc_vload.img = NULL; rc_vload.len = 0; rc_vload.active = 0;
         rc_vsave.active = 0;
+        rc_vsave_ids.clear();
         return rc_stat(-1);
     }
     case EWDX_DMMVOL: {  // pexinfo: pulls (slot, level in millibels)
@@ -784,6 +1087,7 @@ extern "C" void ewdx_register(HSP3TYPEINFO *info) {
     rc_exinfo = info->hspexinfo;
     rc_vload.img = NULL; rc_vload.len = 0; rc_vload.active = 0;
     rc_vsave.active = 0;
+    rc_vsave_ids.clear();
     rc_dmm_ok = 0;
     rc_sortidx.clear();
     info->cmdfunc = rc_cmdfunc_dllcmd;

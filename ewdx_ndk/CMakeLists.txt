@@ -15,8 +15,21 @@ add_library(ewdx STATIC
     ewdx_text.cpp
     ewdx_ovplay.cpp
     ewdx_paths.cpp
+    ewdx_boot.cpp
+    ewdx_extcmd.cpp
     thirdparty/stb_vorbis.c
 )
+
+# OpenHSP VM core (authoritative wiring: android/app/src/main/cpp/CMakeLists.txt).
+# Compiled with -DHSP64 -DHSP_COM_UNSUPPORTED and -include ewdx_supio_decl.h
+# (no HSPLINUX/HSPNDK: HSPUTF8 must stay OFF for the SJIS script):
+#   hsp3.cpp hsp3code.cpp hsp3debug.cpp hsp3int.cpp
+#   hspvar_core/int/str/double/label/struct.cpp
+#   stack.cpp strbuf.cpp strnote.cpp dpmread.cpp filepack.cpp hsp3utfcnv.cpp
+#   ewdx_supio.cpp (supio port: SJIS utils, POSIX fs, logcat Alerts)
+
+# 64-bit HSP VM (silences hsp3struct.h #warning; matches arm64 pointers).
+target_compile_definitions(ewdx PUBLIC HSP64)
 
 # Third-party decoder: silence warnings, slim to pull-from-memory + s16.
 set_source_files_properties(thirdparty/stb_vorbis.c PROPERTIES

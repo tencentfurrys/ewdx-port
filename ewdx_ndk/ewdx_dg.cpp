@@ -36,6 +36,7 @@ int dg_pos(int x, int y)                          { return ewdx_pos(x, y); }
 int dg_rect(int x, int y, int w, int h)           { return ewdx_rect(x, y, w, h); }
 int dg_scale(int x, int y, int a)                 { return ewdx_scale(x, y, a); }
 int dg_copy(int id)                               { return ewdx_copy(id); }
+int dg_copyf(int id, int flags)                   { return ewdx_copy_flags(id, flags); }
 int dg_texture(int id)                            { return ewdx_texture(id); }
 int dg_loadmem(const void *b, int s, int n)       { return ewdx_loadmemory(b, s, n); }
 int dg_createprim(int n)                          { return ewdx_createprim(n); }

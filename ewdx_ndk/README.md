@@ -19,8 +19,11 @@ SDL2 + OpenGL ES 2.0 inside the OpenHSP NDK runtime.
 | `ewdx_audio.h/.cpp` | dmm* SE bank (WAV PCM) + software mixer + OGG BGM streamer w/ sample-accurate loop points, OpenSL ES backend, NULL backend for host tests | done (step d) |
 | `tests/test_audio.cpp` | Host verification (57 checks: parse/mix/pan/loop/status) | done (step d) |
 | `thirdparty/stb_vorbis.c` | Vendored OGG decoder v1.22 (public domain; slimmed `NO_PUSHDATA/NO_STDIO`, `-w`) | done (step d) |
-| `ewdx_register.h/.cpp` | b2 name-dispatched `TYPE_DLLFUNC` cmdfunc/reffunc (~50-entry surface: hmm/hspda/hspogg/system), per-group `stat` contract | done (step b2) |
+| `ewdx_register.h/.cpp` | b2 name-dispatched `TYPE_DLLFUNC` cmdfunc/reffunc (~50-entry surface: hmm/hspda/hspogg/system), per-group `stat` contract; `vload/vsave` live restore (name-keyed INT/DOUBLE/STR, 32-bit hspv I/O) | done (step b2 + STEP-F) |
 | `ewdx_hspv.h/.cpp` | Dependency-free `hspv` reader (hspda-compatible) | done (step a) |
+| `ewdx_boot.h/.cpp` | STEP-F: filesDir probe + AssetManager `data/`/`save.dat` bootstrap + `start.ax` APK->filesDir staging with SJIS-safe DS `\`->`/` patch + chdir + `Hsp3::Reset` boot + SDL `msgfunc`/exec pump + `hsp3ext_getdir` | done (STEP-F part 2) |
+| `ewdx_extcmd.h/.cpp` | STEP-F minimal EXTCMD/EXTSYSVAR shims (screen/title/cls/dialog/mouse/getkey/stick/mes/pos/font + ginfo/dirinfo/sysinfo; opcodes per hsp3gr_dish) | done (STEP-F part 1+2) |
+| `ewdx_supio_decl.h` / `ewdx_supio.cpp` | supio port (SJIS string utils, POSIX fs, logcat Alerts; force-included for hsp3core so HSPUTF8 stays OFF) | done (STEP-F part 2) |
 | `CMakeLists.txt` | Static-lib fragment for the NDK build | done |
 
 ## Evidence backing this draft
@@ -48,8 +51,9 @@ SDL2 + OpenGL ES 2.0 inside the OpenHSP NDK runtime.
   Name-dispatched (`_DGINIT@16` etc., never finfo index); ARM64-safe
   `code_getdi/gets/getva/getsptr` pulls per the dump's minfo decls; full
   `sortval/get` (hsp3int parity) + dependency-free INI/time/LCID/joystick
-  shims; `vload/vsave` lifecycle + validation, `dmm*` lifecycle (live
-  restore + mixer are step d).
+  shims; `vload/vsave` live restore (STEP-F: name-keyed INT/DOUBLE/STR via
+  `code_getdebug_varname/varid` + 32-bit hspv writer, `save.dat` round-trip);
+  `dmm*` full SE bank + mixer (step d).
 - (d/e) Final stubs DONE:
   - Input: `ewdx_input` pumps SDL (touch virtual-stick + Z/X zones, arrows +
     Z/X/C/A/S/D scancodes, first gamepad); `DIGETJOYNUM`=1 so the script
@@ -64,13 +68,26 @@ SDL2 + OpenGL ES 2.0 inside the OpenHSP NDK runtime.
     (HPIDAT scan -> `code_gettypeinfo(-1)` -> `code_enable_typeinfo`);
     `cmd_0_0/1/3/5/6/7/11` drive `ewdx_bgm_*` (double args truncated via
     `code_getdi`, matching the original); `cmd_0_254` stub (dead path).
-- Still open: `vload/vsave` live-var restore, `dialog/end` log shim, SDL2
-  `.so` build, first APK link.
-- NDK gate: all 11 TUs (10 C++ + `stb_vorbis.c`) pass
+- STEP-F part 2 DONE (link + package): `hsp3core` static lib (17 TUs:
+  OpenHSP hsp3/hsp3code/hsp3debug/hsp3int/hspvar x5/stack/strbuf/strnote/
+  dpmread/filepack/hsp3crypt/hsp3utfcnv + `ewdx_supio.cpp`) links into
+  `libmain.so`; `SDL_main` bootstraps assets, `chdir`s to filesDir,
+  `Hsp3::Reset("start.ax")`, installs `ewdx_register` (DLLFUNC + ovplay
+  hook) + `ewdx_extcmd_register` (EXTCMD/EXTSYSVAR) + SDL msgfunc, and
+  `code_execcmd()` runs the script to END/ERROR. `DGGCOPY` now forwards
+  its flags arg (title uses 1/2/8); `ewdx_init` is idempotent (script
+  calls `screen` before `DGINIT`).
+- Device verification (needs game `data/` + device): install the APK,
+  first launch unpacks `data/` + stages patched `start.ax`, logcat
+  `ewdx:` shows probe -> `HSP VM ready` -> title (`label_238`).
+- NDK gate: all ewdx TUs (13 C++ + `stb_vorbis.c`) pass
   `aarch64-linux-android21-clang(++) -fsyntax-only` (`-DHSP64`, zero
-  warnings under `-Wall -Wextra`; third-party TU under `-w`); wired
-  `hsp3ext_ndk.cpp` passes with zero new warnings (4 pre-existing
-  `-Wwritable-strings` in stock code, verified pristine-vs-wired).
+  warnings under `-Wall -Wextra`; third-party TU under `-w`); the 17-TU
+  `hsp3core` (OpenHSP VM + `ewdx_supio.cpp`, `-DHSP_COM_UNSUPPORTED`,
+  `-include ewdx_supio_decl.h`) compiles with only pre-existing upstream
+  `-Wwritable-strings`/`-Wunsequenced` warnings; wired `hsp3ext_ndk.cpp`
+  passes with zero new warnings (4 pre-existing `-Wwritable-strings` in
+  stock code, verified pristine-vs-wired).
 - Host tests (MinGW): `tests/test_audio.cpp` — 57 checks green (NULL
   backend); `tests/test_input.cpp` — 20 checks green (host SDL2 static +
   `tests/shim/ewdx_gles.h`, production code unmodified).

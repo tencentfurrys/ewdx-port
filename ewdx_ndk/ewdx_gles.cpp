@@ -8,6 +8,8 @@
 
 EwdxGles ewdx;
 
+static int g_inited = 0;
+
 static const char *VS_SRC =
     "attribute vec2 a_pos;\n"
     "attribute vec2 a_uv;\n"
@@ -62,8 +64,10 @@ static const GLenum BLEND_DST[8] = {
 };
 
 int ewdx_init(void) {
-    memset(&ewdx, 0, sizeof(ewdx));
+    if (g_inited && ewdx.win != NULL) return -1;  // idempotent: screen (L129)
+    memset(&ewdx, 0, sizeof(ewdx));               // runs before DGINIT (L148)
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER) < 0) return 0;
+    g_inited = 1;
     ewdx_paths_init();  // cache filesDir for save.dat/ini/data resolution
     ewdx_lut_init();  // 256-step sin/cos (FUN_10002460 angle units); batcher needs it
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
@@ -201,6 +205,8 @@ int ewdx_shutdown(void) {
     }
     if (ewdx.ctx) SDL_GL_DeleteContext(ewdx.ctx);
     if (ewdx.win) SDL_DestroyWindow(ewdx.win);
+    memset(&ewdx, 0, sizeof(ewdx));
+    g_inited = 0;
     SDL_Quit();
     return -1;
 }
