@@ -68,5 +68,6 @@ int ewdx_clear(void);                         // DGCLEAR
 int ewdx_present(void);                       // DGREDRAW
 int ewdx_apply_blend(int mode);               // DGBLENDMODE -> glBlendFunc
 int ewdx_shutdown(void);                      // DGEND
+void ewdx_apply_viewport(void);               // viewport := current target dims
 
 #endif

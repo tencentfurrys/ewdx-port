@@ -13,8 +13,17 @@ All work below was executed and verified on 2026-09-11/12.
 - [x] All 154 runtime functions mapped; blend/scale/colorkey recovered from Ghidra
 - [x] NDK translation layer (`ewdx_ndk/`) + Gradle scaffold (`android/`)
 - [x] NDK `arm64` syntax gate green on all translation units
-- [ ] (b2) HSP command registration, (c) batcher done — needs runtime hookup,
-      (d) audio/input/text, SDL2 `.so` build, first APK link
+- [x] (b2) HSP command registration (`ewdx_register.cpp`, wired into
+      `hsp3ext_ndk.cpp`; gate green, zero warnings)
+- [x] (c) batcher hardened — LUT init, flush-before-state-change, per-target
+      viewports, FUN_10001fa0 math audited line-by-line (host-verified logic)
+- [x] (d) audio pipeline (`ewdx_audio`: OpenSL ES + WAV SE bank + OGG BGM
+      streamer, sample-accurate loops; 57-check host test green)
+- [x] (e) input (`ewdx_input`: touch stick/buttons + keys + pad -> joyg mask;
+      20-check host test green), text (`ewdx_text`: SDL_ttf string cache +
+      SJIS table), ovplay `cmd_0_*` EXTCMD hook (HPIDAT/typeinfo)
+- [ ] `vload/vsave` live restore, `dialog/end` shim, SDL2 `.so` build,
+      first APK link
 
 ## 1. Environment (build host)
 

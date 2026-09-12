@@ -8,9 +8,18 @@ SDL2 + OpenGL ES 2.0 inside the OpenHSP NDK runtime.
 | File | Contents | Status |
 |---|---|---|
 | `ewdx_gles.h` | State structs (`EwdxGles`, `EwdxDrawState`, `EwdxBuffer` ×128 + vflip), blend enum 0–7, API decls | done |
-| `ewdx_gles.cpp` | SDL+GLES2 init, `DGSCREEN` viewports, FBO offscreens, `DGCOLOR/CLEAR`, present+flush, `glBlendFunc` table | done (step b) |
-| `ewdx_batch.h/.cpp` | Quad batcher (verbatim FUN_10001fa0 math), 256-step LUT, colorkey upload, prim/line paths, font stubs | done (step c) |
-| `ewdx_dg.cpp` | Script-facing glue, exact `#func` arities, `stat`-on-failure contract | done (b + c) |
+| `ewdx_gles.cpp` | SDL+GLES2 init, per-target viewports, FBO offscreens, `DGCOLOR/CLEAR`, present+flush, `glBlendFunc` table, flush-before-state-change ordering | done (step b + c harden) |
+| `ewdx_batch.h/.cpp` | Quad batcher (verbatim FUN_10001fa0 math, audited L89-222), 256-step LUT, colorkey upload, prim/line paths, `ewdx_immediate_quad` for text | done (step c) |
+| `ewdx_dg.h/.cpp` | Script-facing glue, exact `#func` arities, `stat`-on-failure contract, `DI*` lifecycle | done (b + c) |
+| `ewdx_input.h/.cpp` | SDL pump (touch stick + keys + gamepad) -> joyg 10-bit mask (bit0-3 dpad, bits4+ buttons per `#deffunc joystick`) | done (input) |
+| `ewdx_text.h/.cpp` | SDL_ttf string cache (16-entry LRU) + immediate quads; SJIS->UTF8 via generated table; CJK system-font resolve | done (text) |
+| `ewdx_sjis_tab.h` | GENERATED: 304 CP932 pairs observed in the AX DS segment | done (text) |
+| `ewdx_ovplay.h/.cpp` | ovplay.dll EXTCMD hook: HPIDAT scan + `code_gettypeinfo(-1)` typeinfo, `cmd_0_*` -> bgm api | done (ovplay hook) |
+| `tests/test_input.cpp` (+`shim/`) | Host verification (20 checks: keys/touch-zones/order/combine) | done (input) |
+| `ewdx_audio.h/.cpp` | dmm* SE bank (WAV PCM) + software mixer + OGG BGM streamer w/ sample-accurate loop points, OpenSL ES backend, NULL backend for host tests | done (step d) |
+| `tests/test_audio.cpp` | Host verification (57 checks: parse/mix/pan/loop/status) | done (step d) |
+| `thirdparty/stb_vorbis.c` | Vendored OGG decoder v1.22 (public domain; slimmed `NO_PUSHDATA/NO_STDIO`, `-w`) | done (step d) |
+| `ewdx_register.h/.cpp` | b2 name-dispatched `TYPE_DLLFUNC` cmdfunc/reffunc (~50-entry surface: hmm/hspda/hspogg/system), per-group `stat` contract | done (step b2) |
 | `ewdx_hspv.h/.cpp` | Dependency-free `hspv` reader (hspda-compatible) | done (step a) |
 | `CMakeLists.txt` | Static-lib fragment for the NDK build | done |
 
@@ -32,11 +41,36 @@ SDL2 + OpenGL ES 2.0 inside the OpenHSP NDK runtime.
 
 ## Open items (next steps)
 
-- (b2) Register commands in `hsp3ext_ndk.cpp` via `code_enable_typeinfo()`/
-  `BindFUNC()` (ARM64 param marshaling with `code_getdi`, not stdcall `@16`).
-- (d) Audio: `dmm*` voices (OpenSL/Oboe) + ovplay `cmd_0_5/0_6/0_7` streaming
-  OGG with loop points; `DI*` via `AInputQueue`; `vload/vsave` runtime hookup
-  reusing this `hspv` layout; `DGFONT/DGDRAWTEXT` via SDL_ttf; `dialog/end` →
-  log shim.
-- NDK gate: all 5 TUs pass `aarch64-linux-android21-clang++ -fsyntax-only`
-  (only benign `-Wunused-function` on glue awaiting b2).
+- (b2) ~~Register commands in `hsp3ext_ndk.cpp`~~ DONE:
+  `ewdx_register()` overrides `cmdfunc`/`reffunc` at the end of
+  `hsp3typeinit_dllcmd()` (OpenHSP `src/hsp3/ndk/hsp3ext_ndk.cpp`, 3-line
+  hunk), so stock `hsp3eb_execstart()` picks it up for `TYPE_DLLFUNC`.
+  Name-dispatched (`_DGINIT@16` etc., never finfo index); ARM64-safe
+  `code_getdi/gets/getva/getsptr` pulls per the dump's minfo decls; full
+  `sortval/get` (hsp3int parity) + dependency-free INI/time/LCID/joystick
+  shims; `vload/vsave` lifecycle + validation, `dmm*` lifecycle (live
+  restore + mixer are step d).
+- (d/e) Final stubs DONE:
+  - Input: `ewdx_input` pumps SDL (touch virtual-stick + Z/X zones, arrows +
+    Z/X/C/A/S/D scancodes, first gamepad); `DIGETJOYNUM`=1 so the script
+    takes the `DIGETJOYSTATE` branch and `joyg` carries the 10-bit mask
+    (`#deffunc joystick` layout: bits0-3 UDRL, bits4+ buttons). Pumped on
+    `DGREDRAW` + every input read. Host test 20/20 (synthetic events).
+  - Text: `ewdx_text` renders via SDL_ttf into a 16-entry string LRU cache
+    (utf8 hash + size + DGCOLOR) and draws immediate quads through the
+    shared shader (flush-first). Fonts resolve from Android system CJK
+    fonts; MS-Gothic/Mincho names are documented-unavailable.
+  - ovplay hook: `ewdx_ovplay` replicates `Hsp3ExtAddPlugin` TYPEFUNC path
+    (HPIDAT scan -> `code_gettypeinfo(-1)` -> `code_enable_typeinfo`);
+    `cmd_0_0/1/3/5/6/7/11` drive `ewdx_bgm_*` (double args truncated via
+    `code_getdi`, matching the original); `cmd_0_254` stub (dead path).
+- Still open: `vload/vsave` live-var restore, `dialog/end` log shim, SDL2
+  `.so` build, first APK link.
+- NDK gate: all 11 TUs (10 C++ + `stb_vorbis.c`) pass
+  `aarch64-linux-android21-clang(++) -fsyntax-only` (`-DHSP64`, zero
+  warnings under `-Wall -Wextra`; third-party TU under `-w`); wired
+  `hsp3ext_ndk.cpp` passes with zero new warnings (4 pre-existing
+  `-Wwritable-strings` in stock code, verified pristine-vs-wired).
+- Host tests (MinGW): `tests/test_audio.cpp` — 57 checks green (NULL
+  backend); `tests/test_input.cpp` — 20 checks green (host SDL2 static +
+  `tests/shim/ewdx_gles.h`, production code unmodified).

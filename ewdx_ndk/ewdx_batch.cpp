@@ -1,5 +1,6 @@
 // ewdx_batch.cpp - step (c) quad batcher, verbatim port of FUN_10001fa0 math
 #include "ewdx_batch.h"
+#include "ewdx_text.h"
 #include <SDL.h>
 #include <math.h>
 #include <string.h>
@@ -97,15 +98,27 @@ static void run_check(int tex) {
     if (batch_quads >= EWDX_BATCH_QUADS) ewdx_flush();
 }
 
-// Emit one textured quad, replicating FUN_10001fa0 with flags=0:
-//   pivot = center; rotate via LUT; scale (/256); D3D half-pixel kept verbatim,
-//   then mapped NDC = (X+0.5)/W*2-1 so output matches D3D by construction.
+// Emit one textured quad, replicating FUN_10001fa0 with flags=0.
+// Audited against analysis/decomp_inner.txt (FUN_10001fa0 L89-222):
+//   guard id<0x80 + tex!=0 (L89-92) ......... ewdx_copy_flags early-out
+//   src-rect upper clip vs tex bounds (L99-105, no lower clip) ... rw/rh clamp
+//   scale = s*INV256, or s/rect when flag&2 (L106-113) ... scx/scy at call site
+//   center flag&1 (L115-118) ................ dx/dy adjust at call site
+//   UV normalize + V-flip on ctx+0x90 (L119-128) ... u0/v0/u1/v1 (+vflip)
+//   u/v mirror bits 8/0x10 (L130-139) ....... uflip/vflip2
+//   per-vert: sub pivot, LUT rotate (0xeec=sin,0xfec=cos, idx=0x13fc&0xff),
+//     add pivot, sub dest, scale, add dest-0.5 (L151-178) ... Xr/Yr/Xd/Yd/Xs/Ys
+//   DrawPrimitive(6,2)=TRIANGLEFAN quad .... our 2-triangle expansion
+// Only the final NDC map is ours (D3D->GL): (X+0.5)/W*2-1, which reproduces
+// the D3D half-pixel convention by construction. 8.8 scale (256=1.0x, game
+// passes 256/512) and 8-bit angle come straight from FUN_10002460 (L45-52).
 static void emit_quad(GLuint tex, int texW, int texH, int vflip,
                       float dx, float dy, float dw, float dh,
                       float rx, float ry, float rw, float rh,
                       float scx, float scy, unsigned ang,
                       float cr, float cg, float cb, float ca,
-                      int uflip, int vflip2) {
+                       int uflip, int vflip2) {
+    (void)tex;  // bound by the caller (run_check/batch_tex); geometry only here
     // upper clip to texture bounds (verbatim; no lower clip in orig)
     if (rx + rw > texW) rw = (float)texW - rx;
     if (ry + rh > texH) rh = (float)texH - ry;
@@ -175,6 +188,7 @@ int ewdx_copy(int id) { return ewdx_copy_flags(id, 0); }  // game always passes 
 int ewdx_loadmemory(const void *bmp, int size, int slot) {
     // D3DX parity: force 32-bit RGBA + colorkey opaque-black -> alpha 0.
     if (!bmp || size <= 0 || slot < 0 || slot >= EWDX_MAX_BUFFERS) return 0;
+    ewdx_flush();  // queued quads may sample this slot's old pixels
     SDL_RWops *rw = SDL_RWFromConstMem(bmp, size);
     if (!rw) return 0;
     SDL_Surface *sf = SDL_LoadBMP_RW(rw, 1);
@@ -261,15 +275,35 @@ int ewdx_drawprim(void) {
     return -1;
 }
 
+void ewdx_immediate_quad(unsigned int tex,
+                         float nx0, float ny0, float nx1, float ny1,
+                         float u0, float v0, float u1, float v1,
+                         float cr, float cg, float cb, float ca) {
+    // Same program/attrib layout as the batcher; bypasses the queue.
+    EwdxVert v[6];
+    bind_run((GLuint)tex);
+    v[0].x = nx0; v[0].y = ny0; v[0].u = u0; v[0].v = v0;
+    v[1].x = nx1; v[1].y = ny0; v[1].u = u1; v[1].v = v0;
+    v[2].x = nx1; v[2].y = ny1; v[2].u = u1; v[2].v = v1;
+    v[3].x = nx0; v[3].y = ny0; v[3].u = u0; v[3].v = v0;
+    v[4].x = nx1; v[4].y = ny1; v[4].u = u1; v[4].v = v1;
+    v[5].x = nx0; v[5].y = ny1; v[5].u = u0; v[5].v = v1;
+    {
+        int k;
+        for (k = 0; k < 6; k++) {
+            v[k].r = cr; v[k].g = cg; v[k].b = cb; v[k].a = ca;
+        }
+    }
+    glBufferData(GL_ARRAY_BUFFER, sizeof(v), v, GL_DYNAMIC_DRAW);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+}
+
 int ewdx_font(const char *name, int size) {
-    // Deferred: needs SDL_ttf (not vendored). Non-fatal; menus lose text until then.
-    (void)name; (void)size;
-    return -1;
+    return ewdx_text_font(name, size);
 }
 
 int ewdx_drawtext(const char *s, int x, int y) {
-    (void)s; (void)x; (void)y;
-    return -1;
+    return ewdx_text_draw(s, x, y);
 }
 
 int ewdx_line(int x1, int y1, int x2, int y2) {

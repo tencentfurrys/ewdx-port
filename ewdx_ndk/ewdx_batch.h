@@ -41,12 +41,19 @@ int ewdx_createprim(int n);                    // DGCREATEPRIMITIVE
 int ewdx_addprim(void);                        // DGADDPRIMITIVE (uses pos/color/tex state)
 int ewdx_drawprim(void);                       // DGDRAWPRIMITIVE (immediate flush)
 
-// Text (needs SDL_ttf - deferred; stubs keep menus non-fatal)
+// Text (SDL_ttf string cache in ewdx_text.cpp; always -1, menus non-fatal)
 int ewdx_font(const char *name, int size);     // DGFONT
 int ewdx_drawtext(const char *s, int x, int y);// DGDRAWTEXT
 
 int ewdx_line(int x1, int y1, int x2, int y2); // DGLINE (1px perp quad)
 
 void ewdx_flush(void);  // flush pending quads (called by present + state changes)
+
+// Immediate textured quad for foreign GL textures (text cache). Caller must
+// ewdx_flush() first. NDC corners + UVs (v0 = top) + linear color.
+void ewdx_immediate_quad(unsigned int tex,
+                         float nx0, float ny0, float nx1, float ny1,
+                         float u0, float v0, float u1, float v1,
+                         float cr, float cg, float cb, float ca);
 
 #endif

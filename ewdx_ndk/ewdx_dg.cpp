@@ -1,65 +1,56 @@
-// ewdx_dg.cpp - HSP command glue: script-facing DG*/DI* commands -> ewdx_gles.cpp
-// Registration pattern follows OpenHSP hsp3dish (HSP3TYPEINFO cmdfunc table).
-// HSP-side signatures reproduced from start_ax_dump.hsp #func lines so the
-// decompiled script recompiles unchanged under hspcmp targeting this plugin.
+// ewdx_dg.cpp - HSP command glue: script-facing DG*/DI* commands -> ewdx layer.
 //
-//   DGINIT                          -> ewdx_init()
-//   DGSCREEN w,h,mode,32,0          -> ewdx_screen(w,h,mode)
-//   DGBUFFER id,w,h                 -> ewdx_buffer(id,w,h)
-//   DGGSEL id                       -> ewdx_select(id)
-//   DGCOLOR r,g,b,a                 -> ewdx_color(r,g,b,a)
-//   DGCLEAR                         -> ewdx_clear()
-//   DGREDRAW                        -> ewdx_present()
-//   DGBLENDMODE m                   -> ewdx_apply_blend(m)
-//   DGEND                           -> ewdx_shutdown()
+// HSP-side signatures verified against the live AX dump
+// (artifacts/start_ax_dump.bin finfo/minfo: 240 entries, all "@16" names are
+// STRUCTPRM_SUBID_OLDDLL, plain Win32 names are SUBID_DLL):
+//   DGINIT(bmscr,i,i,i) DGSCREEN(pexinfo: pulls w,h,mode,depth,flag)
+//   DGCOLOR/DGBUFFER/DGGSEL/DGBLENDMODE/DGGCOPY/DGTEXTURE/DGCREATEPRIMITIVE/
+//   DGPOS/DGRECT/DGSCALEANDANGLE/DGLINE(int x4, trailing defaults 0)
+//   DGCLEAR/DGREDRAW/DGEND(int x4, always defaulted) DGFONT/DGDRAWTEXT(bmscr,str,i,i)
+//   DGLOADMEMORY/DIGETJOYSTATE(pvar,i,i,i) DIINIT(bmscr,i,i,i)
 //
-// Step (c) commands (quad batcher: DGPOS/DGRECT/DGSCALEANDANGLE/DGGCOPY,
-// DGTEXTURE/DGCREATEPRIMITIVE/DGADDPRIMITIVE/DGDRAWPRIMITIVE,
-// DGFONT/DGDRAWTEXT/DGLINE/DGLOADMEMORY) attach to EwdxGles.vbo/prog here.
+// All functions are called from ewdx_register.cpp (never by address), so they
+// carry normal C++ linkage; the ARM64/stdcall mismatch is sidestepped because
+// the register pulls script args via code_getdi()/code_getva() like hsp3dish.
+#include "ewdx_dg.h"
 #include "ewdx_gles.h"
 #include "ewdx_batch.h"
 
-// --- thin wrappers with the exact arities observed at call sites ---
+#include <string.h>
 
-static int dg_init(void)                       { return ewdx_init(); }
-static int dg_screen(int w,int h,int m,int,int) { return ewdx_screen(w,h,m); }
-static int dg_buffer(int id,int w,int h)       { return ewdx_buffer(id,w,h); }
-static int dg_select(int id)                   { return ewdx_select(id); }
-static int dg_color(int r,int g,int b,int a)   { return ewdx_color(r,g,b,a); }
-static int dg_clear(void)                      { return ewdx_clear(); }
-static int dg_redraw(void)                     { return ewdx_present(); }
-static int dg_blend(int m)                     { return ewdx_apply_blend(m); }
-static int dg_end(void)                        { return ewdx_shutdown(); }
+// --- lifecycle / targets ---
 
-// --- step (c) wrappers: DGPOS/DGRECT/DGSCALEANDANGLE/DGGCOPY batcher ---
-static int dg_pos(int x, int y)                { return ewdx_pos(x, y); }
-static int dg_rect(int x, int y, int w, int h) { return ewdx_rect(x, y, w, h); }
-static int dg_scale(int x, int y, int a)       { return ewdx_scale(x, y, a); }
-static int dg_copy(int id)                     { return ewdx_copy(id); }
-static int dg_texture(int id)                  { return ewdx_texture(id); }
-static int dg_loadmem(const void *b, int s, int n) { return ewdx_loadmemory(b, s, n); }
-static int dg_createprim(int n)                { return ewdx_createprim(n); }
-static int dg_addprim(void)                    { return ewdx_addprim(); }
-static int dg_drawprim(void)                   { return ewdx_drawprim(); }
-static int dg_font(const char *n, int s)       { return ewdx_font(n, s); }
-static int dg_drawtext(const char *s, int x, int y) { return ewdx_drawtext(s, x, y); }
-static int dg_line(int x1, int y1, int x2, int y2) { return ewdx_line(x1, y1, x2, y2); }
+int dg_init(void)                                 { return ewdx_init(); }
+int dg_screen(int w, int h, int m, int d, int f)  { (void)d; (void)f; return ewdx_screen(w, h, m); }
+int dg_buffer(int id, int w, int h)               { return ewdx_buffer(id, w, h); }
+int dg_select(int id)                             { return ewdx_select(id); }
+int dg_color(int r, int g, int b, int a)          { return ewdx_color(r, g, b, a); }
+int dg_clear(void)                                { return ewdx_clear(); }
+int dg_redraw(void)                               { return ewdx_present(); }
+int dg_blend(int m)                               { return ewdx_apply_blend(m); }
+int dg_end(void)                                  { return ewdx_shutdown(); }
 
-// HSP plugin entry table (names must match the #func names in script):
-//   "DGINIT" "DGSCREEN" "DGBUFFER" "DGGSEL" "DGCOLOR" "DGCLEAR" "DGREDRAW"
-//   "DGBLENDMODE" "DGEND"
-//   "DGPOS" "DGRECT" "DGSCALEANDANGLE" "DGGCOPY" "DGTEXTURE" "DGLOADMEMORY"
-//   "DGCREATEPRIMITIVE" "DGADDPRIMITIVE" "DGDRAWPRIMITIVE"
-//   "DGFONT" "DGDRAWTEXT" "DGLINE"
-// TODO(step b2): register via hsp3ext_ndk.cpp using
-//   code_enable_typeinfo() + BindFUNC(), mirroring how hmm.dll's
-//   HPIDAT/finfo table binds "_DGINIT@16" etc. on Windows.
-//   Calling convention on ARM64 differs from x86 stdcall @16; the HSP
-//   bytecode passes plain ints so the glue reads params with
-//   code_getdi()/code_getva() like hsp3dish does (see hsp3gr_dish.cpp),
-//   NOT via native varargs.
+// --- retained-state draw path ---
 
-// Verified stat semantics to preserve:
-//   DGLOADMEMORY sets stat==0 on failure -> script shows dialog + end.
-//   Our port must set the equivalent stat so missing-asset errors surface
-//   identically (shimmed to __android_log_print, not a Win32 dialog).
+int dg_pos(int x, int y)                          { return ewdx_pos(x, y); }
+int dg_rect(int x, int y, int w, int h)           { return ewdx_rect(x, y, w, h); }
+int dg_scale(int x, int y, int a)                 { return ewdx_scale(x, y, a); }
+int dg_copy(int id)                               { return ewdx_copy(id); }
+int dg_texture(int id)                            { return ewdx_texture(id); }
+int dg_loadmem(const void *b, int s, int n)       { return ewdx_loadmemory(b, s, n); }
+int dg_createprim(int n)                          { return ewdx_createprim(n); }
+int dg_addprim(void)                              { return ewdx_addprim(); }
+int dg_drawprim(void)                             { return ewdx_drawprim(); }
+int dg_font(const char *n, int s)                 { return ewdx_font(n, s); }
+int dg_drawtext(const char *s, int x, int y)      { return ewdx_drawtext(s, x, y); }
+int dg_line(int x1, int y1, int x2, int y2)       { return ewdx_line(x1, y1, x2, y2); }
+
+// --- input lifecycle (state in ewdx_input.cpp; mask via register) ---
+
+int dg_diinit(void)                               { return -1; }
+int dg_diend(void)                                { return -1; }
+
+// Verified stat semantics preserved by the register (ctx->stat = return):
+//   DGLOADMEMORY 0 on failure -> script shows dialog + end.
+//   DGINIT/DIINIT 0 -> "DirectGraphics/DirectInput ..." dialogs.
+//   DIGETJOYNUM 1 -> DIGETJOYSTATE fills joyg bitmask (label_198 branch).

@@ -2,6 +2,8 @@
 // Covers step (b): DGINIT/DGSCREEN/DGBUFFER/DGGSEL/DGCOLOR/DGCLEAR/DGREDRAW
 #include "ewdx_gles.h"
 #include "ewdx_batch.h"
+#include "ewdx_text.h"
+#include "ewdx_paths.h"
 #include <string.h>
 
 EwdxGles ewdx;
@@ -61,7 +63,9 @@ static const GLenum BLEND_DST[8] = {
 
 int ewdx_init(void) {
     memset(&ewdx, 0, sizeof(ewdx));
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER) < 0) return -1;
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER) < 0) return 0;
+    ewdx_paths_init();  // cache filesDir for save.dat/ini/data resolution
+    ewdx_lut_init();  // 256-step sin/cos (FUN_10002460 angle units); batcher needs it
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
@@ -70,7 +74,17 @@ int ewdx_init(void) {
     ewdx.st.scalex = ewdx.st.scaley = 256;
     ewdx.st.a = 255;
     ewdx.st.blend = EWDX_BLEND_ALPHA;
-    return 0;
+    return -1;  // HSP convention: -1 ok / 0 fail (stat-ready; see ewdx_dg.h)
+}
+
+// Viewport always matches the CURRENT render target (screen or FBO size).
+// emit_quad maps NDC against these same dims, so the two must agree.
+void ewdx_apply_viewport(void) {
+    int w = (ewdx.target == 0) ? ewdx.scr_w : ewdx.buf[ewdx.target].w;
+    int h = (ewdx.target == 0) ? ewdx.scr_h : ewdx.buf[ewdx.target].h;
+    if (w <= 0) w = (ewdx.scr_w > 0) ? ewdx.scr_w : 1;
+    if (h <= 0) h = (ewdx.scr_h > 0) ? ewdx.scr_h : 1;
+    glViewport(0, 0, w, h);
 }
 
 int ewdx_screen(int w, int h, int mode) {
@@ -78,12 +92,13 @@ int ewdx_screen(int w, int h, int mode) {
     // w/h observed: 640x480 or 1280x960 (wmode_w flag).
     Uint32 flags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE;
     (void)mode;
+    ewdx_flush();  // queued quads were mapped against the old size
     if (!ewdx.win) {
         ewdx.win = SDL_CreateWindow("EchidnaWarsDX",
             SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, w, h, flags);
-        if (!ewdx.win) return -1;
+        if (!ewdx.win) return 0;
         ewdx.ctx = SDL_GL_CreateContext(ewdx.win);
-        if (!ewdx.ctx) return -1;
+        if (!ewdx.ctx) return 0;
         GLuint vs = compile_shader(GL_VERTEX_SHADER, VS_SRC);
         GLuint fs = compile_shader(GL_FRAGMENT_SHADER, FS_SRC);
         ewdx.prog = glCreateProgram();
@@ -103,19 +118,23 @@ int ewdx_screen(int w, int h, int mode) {
     }
     ewdx.scr_w = w;
     ewdx.scr_h = h;
-    glViewport(0, 0, w, h);
-    return 0;
+    ewdx_apply_viewport();  // viewport follows the current target, not always screen
+    return -1;
+}
+
+static void ewdx_drop_buffer(EwdxBuffer *b) {
+    if (b->tex) glDeleteTextures(1, &b->tex);
+    if (b->fbo) glDeleteFramebuffers(1, &b->fbo);
+    b->tex = 0; b->fbo = 0; b->valid = 0;
 }
 
 int ewdx_buffer(int id, int w, int h) {
     // Game allocates 6 fixed offscreens at boot (1:640x480 2:256x256 3:512x512
     // 4:640x480 5:320x240 6:256x256). Back them with FBO+RGBA texture.
-    if (id < 0 || id >= EWDX_MAX_BUFFERS) return -1;
+    if (id < 0 || id >= EWDX_MAX_BUFFERS) return 0;
+    ewdx_flush();  // queued quads may sample the texture/FBO being replaced
     EwdxBuffer *b = &ewdx.buf[id];
-    if (b->valid) {
-        glDeleteTextures(1, &b->tex);
-        glDeleteFramebuffers(1, &b->fbo);
-    }
+    if (b->valid) ewdx_drop_buffer(b);
     glGenTextures(1, &b->tex);
     glBindTexture(GL_TEXTURE_2D, b->tex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -129,45 +148,51 @@ int ewdx_buffer(int id, int w, int h) {
     glBindFramebuffer(GL_FRAMEBUFFER, ewdx.buf[ewdx.target].fbo);
     b->w = w; b->h = h; b->valid = 1;
     b->vflip = 1;  // render-target sampling flips V (mirrors ctx+0x90 set path)
-    return 0;
+    return -1;
 }
 
 int ewdx_select(int id) {
     if (id < 0 || id >= EWDX_MAX_BUFFERS || !ewdx.buf[id].valid) {
-        if (id != 0) return -1;
+        if (id != 0) return 0;
     }
+    if (id != ewdx.target) ewdx_flush();  // queued quads belong to the old FBO
     ewdx.target = id;
     glBindFramebuffer(GL_FRAMEBUFFER, ewdx.buf[id].fbo); // slot 0 fbo==0 (default)
-    return 0;
+    ewdx_apply_viewport();
+    return -1;
 }
 
 int ewdx_color(int r, int g, int b, int a) {
     ewdx.st.r = r; ewdx.st.g = g; ewdx.st.b = b; ewdx.st.a = a;
-    return 0;
+    return -1;
 }
 
 int ewdx_clear(void) {
+    // D3D Clear is immediate: earlier queued draws (command order) must land first.
+    ewdx_flush();
     glClearColor(ewdx.st.r / 255.0f, ewdx.st.g / 255.0f,
                  ewdx.st.b / 255.0f, ewdx.st.a / 255.0f);
     glClear(GL_COLOR_BUFFER_BIT);
-    return 0;
+    return -1;
 }
 
 int ewdx_present(void) {
     ewdx_flush();  // step (c): drain quad batcher before swap
     if (ewdx.target != 0) ewdx_select(0);
     SDL_GL_SwapWindow(ewdx.win);
-    return 0;
+    return -1;
 }
 
 int ewdx_apply_blend(int mode) {
     if (mode < 0 || mode > 7) mode = EWDX_BLEND_ALPHA;
+    if (mode != ewdx.st.blend) ewdx_flush();  // pending quads use the old factors
     ewdx.st.blend = mode;
     glBlendFunc(BLEND_SRC[mode], BLEND_DST[mode]);
-    return 0;
+    return -1;
 }
 
 int ewdx_shutdown(void) {
+    ewdx_text_shutdown();  // frees string-cache textures + closes fonts (GL alive)
     for (int i = 1; i < EWDX_MAX_BUFFERS; i++) {
         if (ewdx.buf[i].valid) {
             glDeleteTextures(1, &ewdx.buf[i].tex);
@@ -177,5 +202,5 @@ int ewdx_shutdown(void) {
     if (ewdx.ctx) SDL_GL_DeleteContext(ewdx.ctx);
     if (ewdx.win) SDL_DestroyWindow(ewdx.win);
     SDL_Quit();
-    return 0;
+    return -1;
 }
