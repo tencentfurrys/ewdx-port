@@ -1,0 +1,148 @@
+INFO  Using log config file: jar:file:/C:/tools/Ghidra/ghidra_11.3.2_PUBLIC/Ghidra/Framework/Generic/lib/Generic.jar!/generic.log4j.xml (LoggingInitialization)  
+INFO  Using log file: C:\Users\runneradmin\AppData\Roaming\ghidra\ghidra_11.3.2_PUBLIC\application.log (LoggingInitialization)  
+INFO  Loading user preferences: C:\Users\runneradmin\AppData\Roaming\ghidra\ghidra_11.3.2_PUBLIC\preferences (Preferences)  
+INFO  Searching for classes... (ClassSearcher)  
+INFO  Class search complete (1156 ms) (ClassSearcher)  
+INFO  Initializing SSL Context (SSLContextInitializer)  
+INFO  Initializing Random Number Generator... (SecureRandomFactory)  
+INFO  Random Number Generator initialization complete: SHA1PRNG (SecureRandomFactory)  
+INFO  Trust manager disabled, cacerts have not been set (ApplicationTrustManagerFactory)  
+INFO  Headless startup complete (3131 ms) (AnalyzeHeadless)  
+INFO  Class searcher loaded 57 extension points (18 false positives) (ClassSearcher)  
+INFO  HEADLESS Script Paths:
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Features\DecompilerDependent\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Features\PDB\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Debug\Debugger\ghidra_scripts
+    C:\Users\runneradmin\Documents\Default Project\ghidra_projects\scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Features\GnuDemangler\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Processors\PIC\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Features\Base\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Features\MicrosoftCodeAnalyzer\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Debug\Debugger-rmi-trace\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Features\WildcardAssembler\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Features\BSim\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Processors\Atmel\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Features\PyGhidra\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Features\VersionTracking\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Processors\8051\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Features\BytePatterns\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Features\Decompiler\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Features\FunctionID\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Processors\DATA\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Processors\JVM\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Features\Jython\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Features\SwiftDemangler\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Features\FileFormats\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Features\SystemEmulation\ghidra_scripts (HeadlessAnalyzer)  
+INFO  HEADLESS: execution starts (HeadlessAnalyzer)  
+INFO  Opening existing project: C:\Users\runneradmin\Documents\Default Project\ghidra_projects\HSP3Runtime (HeadlessAnalyzer)  
+INFO  Opening project: C:\Users\runneradmin\Documents\Default Project\ghidra_projects\HSP3Runtime (HeadlessProject)  
+INFO  REPORT: Processing project file: /hmm.dll (HeadlessAnalyzer)  
+INFO  SCRIPT: C:\Users\runneradmin\Documents\Default Project\ghidra_projects\scripts\DecompOne.java (HeadlessAnalyzer)  
+INFO  DecompOne.java> === searching for: DGLOADMEMORY === (GhidraScript)  
+INFO  DecompOne.java> --- function: _DGLOADMEMORY@16 @ 1000cf00 --- (GhidraScript)  
+INFO  DecompOne.java> 
+int _DGLOADMEMORY_16(uint *param_1,byte *param_2,int param_3)
+
+{
+  undefined4 uVar1;
+  
+                    /* 0xcf00  44  _DGLOADMEMORY@16 */
+  uVar1 = FUN_10001b30(&DAT_10092cc8,param_1,param_2,param_3);
+  return -(uint)((char)uVar1 != '\0');
+}
+
+ (GhidraScript)  
+INFO  DecompOne.java> --- followed: FUN_10001b30 @ 10001b30 --- (GhidraScript)  
+INFO  DecompOne.java> 
+undefined4 __thiscall FUN_10001b30(void *this,uint *param_1,byte *param_2,int param_3)
+
+{
+  undefined4 *puVar1;
+  undefined4 *puVar2;
+  undefined4 uVar3;
+  undefined4 unaff_EBP;
+  undefined4 unaff_ESI;
+  int unaff_retaddr;
+  int *piVar4;
+  uint uVar5;
+  int aiStack_3c [4];
+  undefined1 auStack_2c [12];
+  undefined4 uStack_20;
+  undefined4 uStack_1c;
+  
+  uVar5 = param_3;
+  if (((0 < param_3) && (param_3 < 0x80)) && (*(int *)((int)this + 4) != 0)) {
+    piVar4 = *(int **)((int)this + param_3 * 0x1c + 0x78);
+    puVar1 = (undefined4 *)((int)this + param_3 * 0x1c + 0x78);
+    if (piVar4 != (int *)0x0) {
+      (**(code **)(*piVar4 + 8))(piVar4);
+      *puVar1 = 0;
+    }
+    piVar4 = *(int **)((int)this + param_3 * 0x1c + 0x7c);
+    puVar2 = (undefined4 *)((int)this + param_3 * 0x1c + 0x7c);
+    if (piVar4 != (int *)0x0) {
+      (**(code **)(*piVar4 + 8))(piVar4);
+      *puVar2 = 0;
+    }
+    *(undefined1 *)((int)this + param_3 * 0x1c + 0x90) = 0;
+    if (*(short *)((int)this + 0x147c) == 0x10) {
+      piVar4 = *(int **)((int)this + 4);
+      uVar5 = 0x19;
+    }
+    else {
+      piVar4 = *(int **)((int)this + 4);
+      uVar5 = 0x15;
+    }
+    uVar5 = FUN_100268d6(piVar4,param_1,param_2,0xffffffff,0xffffffff,0xffffffff,1,uVar5,0,1,
+                         (undefined4 *)0x1,0xff000000,aiStack_3c,(undefined4 *)0x0,puVar1);
+    if (-1 < (int)uVar5) {
+      (**(code **)(*(int *)*puVar1 + 0x48))((int *)*puVar1,0,puVar2);
+      *(undefined4 *)((int)this + param_3 * 0x1c + 0x88) = unaff_ESI;
+      *(undefined4 *)((int)this + (unaff_retaddr + 5) * 0x1c) = unaff_EBP;
+      (**(code **)(*(int *)*puVar1 + 0x44))((int *)*puVar1,0,auStack_2c);
+      *(undefined4 *)((int)this + param_3 * 0x1c + 0x80) = uStack_20;
+      *(undefined4 *)((int)this + param_3 * 0x1c + 0x84) = uStack_1c;
+      uVar3 = (**(code **)(**(int **)((int)this + 4) + 0x104))(*(int **)((int)this + 4),0,*puVar1);
+      return CONCAT31((int3)((uint)uVar3 >> 8),1);
+    }
+  }
+  return uVar5 & 0xffffff00;
+}
+
+ (GhidraScript)  
+INFO  DecompOne.java> === searching for: DGINIT === (GhidraScript)  
+INFO  DecompOne.java> --- function: _DGINIT@16 @ 1000cd60 --- (GhidraScript)  
+INFO  DecompOne.java> 
+int _DGINIT_16(int param_1)
+
+{
+  undefined4 uVar1;
+  
+                    /* 0xcd60  41  _DGINIT@16 */
+  uVar1 = FUN_100012c0(&DAT_10092cc8,*(int *)(param_1 + 0x34));
+  return -(uint)((char)uVar1 != '\0');
+}
+
+ (GhidraScript)  
+INFO  DecompOne.java> --- followed: FUN_100012c0 @ 100012c0 --- (GhidraScript)  
+INFO  DecompOne.java> 
+uint __thiscall FUN_100012c0(void *this,int param_1)
+
+{
+  int iVar1;
+  uint uVar2;
+  
+  FUN_10001750((int *)this);
+  iVar1 = Direct3DCreate9(0x1f);
+  *(int *)this = iVar1;
+  if (iVar1 == 0) {
+    uVar2 = MessageBoxA((HWND)0x0,&DAT_1007a040,s_Error_1007a060,0x10);
+    return uVar2 & 0xffffff00;
+  }
+  *(int *)((int)this + 0x1460) = param_1;
+  return CONCAT31((int3)((uint)param_1 >> 8),1);
+}
+
+ (GhidraScript)  
+INFO  REPORT: Save succeeded for processed file: /hmm.dll (HeadlessAnalyzer)  

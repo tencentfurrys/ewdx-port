@@ -1,0 +1,18 @@
+// Top-level build file. Versions pinned to mutually compatible, existing releases:
+//   Android Gradle Plugin 8.5.2  <->  Gradle 8.7  <->  NDK 27.3.13750724 (installed)
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath("com.android.tools.build:gradle:8.5.2")
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}

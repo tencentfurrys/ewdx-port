@@ -1,0 +1,17 @@
+# Never commit game binaries/assets or local build outputs.
+*.exe
+*.dll
+*.so
+*.zip
+*.bmp
+*.wav
+*.ogg
+*.mot
+*.mol
+*.map
+*.dat
+*.o
+*.obj
+build/
+.gradle/
+local.properties

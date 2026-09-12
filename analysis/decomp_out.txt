@@ -1,0 +1,104 @@
+INFO  Using log config file: jar:file:/C:/tools/Ghidra/ghidra_11.3.2_PUBLIC/Ghidra/Framework/Generic/lib/Generic.jar!/generic.log4j.xml (LoggingInitialization)  
+INFO  Using log file: C:\Users\runneradmin\AppData\Roaming\ghidra\ghidra_11.3.2_PUBLIC\application.log (LoggingInitialization)  
+INFO  Loading user preferences: C:\Users\runneradmin\AppData\Roaming\ghidra\ghidra_11.3.2_PUBLIC\preferences (Preferences)  
+INFO  Searching for classes... (ClassSearcher)  
+INFO  Class search complete (1292 ms) (ClassSearcher)  
+INFO  Initializing SSL Context (SSLContextInitializer)  
+INFO  Initializing Random Number Generator... (SecureRandomFactory)  
+INFO  Random Number Generator initialization complete: SHA1PRNG (SecureRandomFactory)  
+INFO  Trust manager disabled, cacerts have not been set (ApplicationTrustManagerFactory)  
+INFO  Headless startup complete (3436 ms) (AnalyzeHeadless)  
+INFO  Class searcher loaded 57 extension points (18 false positives) (ClassSearcher)  
+INFO  HEADLESS Script Paths:
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Features\DecompilerDependent\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Features\PDB\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Debug\Debugger\ghidra_scripts
+    C:\Users\runneradmin\Documents\Default Project\ghidra_projects\scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Features\GnuDemangler\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Processors\PIC\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Features\Base\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Features\MicrosoftCodeAnalyzer\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Debug\Debugger-rmi-trace\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Features\WildcardAssembler\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Features\BSim\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Processors\Atmel\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Features\PyGhidra\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Features\VersionTracking\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Processors\8051\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Features\BytePatterns\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Features\Decompiler\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Features\FunctionID\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Processors\DATA\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Processors\JVM\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Features\Jython\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Features\SwiftDemangler\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Features\FileFormats\ghidra_scripts
+    C:\tools\Ghidra\ghidra_11.3.2_PUBLIC\Ghidra\Features\SystemEmulation\ghidra_scripts (HeadlessAnalyzer)  
+INFO  HEADLESS: execution starts (HeadlessAnalyzer)  
+INFO  Opening existing project: C:\Users\runneradmin\Documents\Default Project\ghidra_projects\HSP3Runtime (HeadlessAnalyzer)  
+INFO  Opening project: C:\Users\runneradmin\Documents\Default Project\ghidra_projects\HSP3Runtime (HeadlessProject)  
+INFO  REPORT: Processing project file: /hmm.dll (HeadlessAnalyzer)  
+INFO  SCRIPT: C:\Users\runneradmin\Documents\Default Project\ghidra_projects\scripts\DecompOne.java (HeadlessAnalyzer)  
+INFO  DecompOne.java> === searching for: DGSCALEANDANGLE === (GhidraScript)  
+INFO  DecompOne.java> --- function: _DGSCALEANDANGLE@16 @ 1000cf70 --- (GhidraScript)  
+INFO  DecompOne.java> 
+undefined4 _DGSCALEANDANGLE_16(int param_1,int param_2,uint param_3)
+
+{
+                    /* 0xcf70  49  _DGSCALEANDANGLE@16 */
+  FUN_10002460(&DAT_10092cc8,param_1,param_2,param_3);
+  return 0xffffffff;
+}
+
+ (GhidraScript)  
+INFO  DecompOne.java> === searching for: DGTEXTURE === (GhidraScript)  
+INFO  DecompOne.java> --- function: _DGTEXTURE@16 @ 1000d0a0 --- (GhidraScript)  
+INFO  DecompOne.java> 
+int _DGTEXTURE_16(undefined4 param_1)
+
+{
+  undefined4 uVar1;
+  
+                    /* 0xd0a0  51  _DGTEXTURE@16 */
+  uVar1 = FUN_10002b50(&DAT_10092cc8,param_1);
+  return -(uint)((char)uVar1 != '\0');
+}
+
+ (GhidraScript)  
+INFO  DecompOne.java> === searching for: DGPOS === (GhidraScript)  
+INFO  DecompOne.java> --- function: _DGPOS@16 @ 1000cf20 --- (GhidraScript)  
+INFO  DecompOne.java> 
+undefined4 _DGPOS_16(int param_1,int param_2)
+
+{
+                    /* 0xcf20  45  _DGPOS@16 */
+  FUN_10002490(&DAT_10092cc8,param_1,param_2);
+  return 0xffffffff;
+}
+
+ (GhidraScript)  
+INFO  DecompOne.java> === searching for: DGRECT === (GhidraScript)  
+INFO  DecompOne.java> --- function: _DGRECT@16 @ 1000cf40 --- (GhidraScript)  
+INFO  DecompOne.java> 
+undefined4 _DGRECT_16(undefined4 param_1,undefined4 param_2,undefined4 param_3,undefined4 param_4)
+
+{
+                    /* 0xcf40  46  _DGRECT@16 */
+  FUN_10002430(&DAT_10092cc8,param_1,param_2,param_3,param_4);
+  return 0xffffffff;
+}
+
+ (GhidraScript)  
+INFO  DecompOne.java> === searching for: DGCOLOR === (GhidraScript)  
+INFO  DecompOne.java> --- function: _DGCOLOR@16 @ 1000ce30 --- (GhidraScript)  
+INFO  DecompOne.java> 
+undefined4 _DGCOLOR_16(uint param_1,uint param_2,uint param_3,int param_4)
+
+{
+                    /* 0xce30  33  _DGCOLOR@16 */
+  FUN_100023c0(&DAT_10092cc8,param_4,param_1,param_2,param_3);
+  return 0xffffffff;
+}
+
+ (GhidraScript)  
+INFO  REPORT: Save succeeded for processed file: /hmm.dll (HeadlessAnalyzer)  
