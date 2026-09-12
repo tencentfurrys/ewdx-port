@@ -51,6 +51,12 @@ android {
         // relative paths (data\pic\..., save.dat) resolve unchanged.
         getByName("main") {
             assets.srcDirs("src/main/assets")
+            // SDL2's Java activity (SDLActivity + audio/input/HID managers).
+            // The manifest's launcher activity is org.libsdl.app.SDLActivity;
+            // without these sources classes.dex has no activity and the app
+            // dies instantly with ClassNotFoundException (seen in bugreport).
+            // SDL2 is a sibling checkout (see ewdx-port/refs.md).
+            java.srcDirs("../../../SDL2/android-project/app/src/main/java")
         }
     }
 }

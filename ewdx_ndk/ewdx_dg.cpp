@@ -15,6 +15,7 @@
 #include "ewdx_dg.h"
 #include "ewdx_gles.h"
 #include "ewdx_batch.h"
+#include "ewdx_boot.h"
 
 #include <string.h>
 
@@ -26,7 +27,7 @@ int dg_buffer(int id, int w, int h)               { return ewdx_buffer(id, w, h)
 int dg_select(int id)                             { return ewdx_select(id); }
 int dg_color(int r, int g, int b, int a)          { return ewdx_color(r, g, b, a); }
 int dg_clear(void)                                { return ewdx_clear(); }
-int dg_redraw(void)                               { return ewdx_present(); }
+int dg_redraw(void)                               { int rc = ewdx_present(); ewdx_boot_frame(); return rc; }
 int dg_blend(int m)                               { return ewdx_apply_blend(m); }
 int dg_end(void)                                  { return ewdx_shutdown(); }
 

@@ -1,7 +1,9 @@
 // ewdx_batch.cpp - step (c) quad batcher, verbatim port of FUN_10001fa0 math
 #include "ewdx_batch.h"
 #include "ewdx_text.h"
+#include "ewdx_boot.h"
 #include <SDL.h>
+#include <stdio.h>
 #include <math.h>
 #include <string.h>
 
@@ -165,6 +167,7 @@ static void emit_quad(GLuint tex, int texW, int texH, int vflip,
 }
 
 int ewdx_copy_flags(int id, int flags) {
+    static int first = 1;
     if (id < 0 || id >= EWDX_MAX_BUFFERS) return 0;
     EwdxBuffer *t = &ewdx.buf[id];
     if (!t->valid || !t->tex) return 0;  // orig draws nothing when slot empty
@@ -179,6 +182,10 @@ int ewdx_copy_flags(int id, int flags) {
               ewdx.st.r / 255.0f, ewdx.st.g / 255.0f,
               ewdx.st.b / 255.0f, ewdx.st.a / 255.0f,
               (flags & 8) != 0, (flags & 0x10) != 0);
+    if (first) {
+        first = 0;
+        ewdx_boot_journal("first copy queued");
+    }
     if (batch_quads >= EWDX_BATCH_QUADS) ewdx_flush();
     return -1;
 }
@@ -187,6 +194,7 @@ int ewdx_copy(int id) { return ewdx_copy_flags(id, 0); }  // game always passes 
 
 int ewdx_loadmemory(const void *bmp, int size, int slot) {
     // D3DX parity: force 32-bit RGBA + colorkey opaque-black -> alpha 0.
+    static int first = 1;
     if (!bmp || size <= 0 || slot < 0 || slot >= EWDX_MAX_BUFFERS) return 0;
     ewdx_flush();  // queued quads may sample this slot's old pixels
     SDL_RWops *rw = SDL_RWFromConstMem(bmp, size);
@@ -241,6 +249,12 @@ int ewdx_loadmemory(const void *bmp, int size, int slot) {
     SDL_free(out);
     t->w = W; t->h = H; t->valid = 1;
     t->vflip = 0;  // FUN_10001b30 clears +0x90 on load
+    if (first) {
+        char msg[96];
+        first = 0;
+        snprintf(msg, sizeof(msg), "first texture up (slot %d, %dx%d)", slot, W, H);
+        ewdx_boot_journal(msg);
+    }
     return -1;
 }
 

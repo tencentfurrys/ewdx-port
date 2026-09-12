@@ -45,6 +45,12 @@ int ewdx_boot_stage_ax(void);
 // logcat shows the follow-on fopen errors with full paths).
 int ewdx_boot_chdir(void);
 
+// Create the SDL window + GL context early (black frame) so first-launch
+// unpacking shows a live surface instead of a dead black screen. The
+// script's `screen` call later reuses/resizes it. Returns 0 ok, <0 failed
+// (non-fatal: the script path recreates it).
+int ewdx_boot_early_window(void);
+
 // Hsp3 boot (steps 5). Returns 0 ok, <0 failed (dialog already shown).
 int ewdx_boot_startup(void);
 
@@ -57,6 +63,21 @@ void ewdx_boot_bye(void);
 // Main-loop tick helper: pump input (the VM thread blocks inside exec;
 // DGREDRAW/DIGETJOYSTATE poll input on the same thread).
 int ewdx_boot_tick(void);
+
+// --- crash visibility -------------------------------------------------
+// filesDir/boot.log journals every boot stage (unbuffered). On a native
+// crash the last line shows how far boot got; on the NEXT launch the tail
+// is shown on screen for 10 s so it can be photographed/reported.
+// Call ewdx_boot_crash_ui_init() once after ewdx_init(), journal() at each
+// stage, and ewdx_boot_crash_clean() on graceful exit.
+void ewdx_boot_journal(const char *msg);
+void ewdx_boot_crash_ui_init(void);
+void ewdx_boot_crash_clean(void);
+
+// Per-present heartbeat (call once per frame): every ~6 s journals
+// "alive f=N line=L joyg=0xM" (VM script line + live input mask), proving
+// remotely whether the game loop ticks, where it sits, and if touch works.
+void ewdx_boot_frame(void);
 
 #ifdef __cplusplus
 }

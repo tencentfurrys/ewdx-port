@@ -4,6 +4,7 @@
 #include "ewdx_batch.h"
 #include "ewdx_text.h"
 #include "ewdx_paths.h"
+#include "ewdx_boot.h"
 #include <string.h>
 
 EwdxGles ewdx;
@@ -181,9 +182,11 @@ int ewdx_clear(void) {
 }
 
 int ewdx_present(void) {
+    static int first = 1;
     ewdx_flush();  // step (c): drain quad batcher before swap
     if (ewdx.target != 0) ewdx_select(0);
     SDL_GL_SwapWindow(ewdx.win);
+    if (first) { first = 0; ewdx_boot_journal("first present"); }
     return -1;
 }
 

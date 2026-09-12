@@ -10,6 +10,12 @@ cmake_minimum_required(VERSION 3.22)
 
 project(ewdx LANGUAGES C CXX)
 
+# Android 15+ devices use 16 KB memory pages and refuse to load 4 KB-aligned
+# .so files (instant death before any app code runs, zero logs). Force 16 KB
+# alignment for EVERYTHING here, including the SDL2/SDL_ttf subbuilds below
+# (directory-scoped: inherited by add_subdirectory targets added after this).
+add_link_options("-Wl,-z,max-page-size=16384")
+
 set(SDL_SHARED ON CACHE BOOL "" FORCE)
 set(SDL_STATIC OFF CACHE BOOL "" FORCE)
 # NOTE: paths are relative to this file (ewdx-port/android/app/src/main/cpp/).
