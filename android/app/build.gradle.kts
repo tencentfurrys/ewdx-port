@@ -16,12 +16,12 @@ android {
         versionName = "1.0-dx-port"
 
         ndk {
-            abiFilters += listOf("arm64-v8a")
+            abiFilters += "arm64-v8a"
         }
 
         externalNativeBuild {
             cmake {
-                arguments += listOf("-DANDROID_STL=c++_shared")
+                arguments += "-DANDROID_STL=c++_shared"
             }
         }
     }
