@@ -17,6 +17,10 @@
 #include "ewdx_extcmd.h"
 #include "ewdx_gles.h"
 
+// Bump per shipped build; journaled right after "=== run ===" so every
+// collected log positively identifies the binary that produced it.
+#define EWDX_BUILD_TAG "v6-2026-09-16-dggcopy"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,6 +36,7 @@
 #ifdef __ANDROID__
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <dirent.h>
 #include <errno.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -415,6 +420,30 @@ static int boot_copy_asset(AAssetManager *mgr, const char *asset,
     return 1;
 }
 
+// Known subdirectories of assets/data/ (see assets/README.md staging map).
+// AAssetDir_getNextFileName lists FILES ONLY -- subdirectories are invisible
+// to the NDK asset API, so "data" (all subdirs) enumerates empty and the
+// unpack silently staged nothing. We recurse through this explicit list and
+// verify the six pools at the end so a silent miss is impossible.
+static const char *const boot_data_subdirs[] = {
+    "map", "mold", "mot", "music", "pic", "se",
+};
+
+// Count regular entries in a directory (excludes dot entries). -1 if absent.
+static int boot_count_files(const char *dir) {
+    DIR *dp;
+    struct dirent *e;
+    int n = 0;
+    dp = opendir(dir);
+    if (dp == NULL) return -1;
+    while ((e = readdir(dp)) != NULL) {
+        if (e->d_name[0] == '.') continue;
+        n++;
+    }
+    closedir(dp);
+    return n;
+}
+
 // Recursively copy assetPath/ -> dstPath/ (both without trailing slash).
 // Returns files copied, 0 when the asset path holds nothing.
 static int boot_copy_tree(AAssetManager *mgr, const char *assetPath,
@@ -489,19 +518,72 @@ int ewdx_boot_bootstrap(void) {
         ewdx_resolve("data", dstdir, sizeof(dstdir));
         boot_mkdirs(dstdir);
         EWDX_LOGW("boot: unpacking data/ from APK (first launch) ...");
-        rc = boot_copy_tree(mgr, "data", dstdir);
+        // Explicit subdir recursion: AAssetDir cannot list directories, so
+        // boot_copy_tree("data") sees no FILES and returns 0. Walk the known
+        // pools instead (per assets/README.md staging map).
+        rc = 0;
+        {
+            int i, sub_total;
+            for (i = 0; i < (int)(sizeof(boot_data_subdirs) /
+                                  sizeof(boot_data_subdirs[0])); i++) {
+                char sub_asset[512], sub_dst[2048];
+                snprintf(sub_asset, sizeof(sub_asset), "data/%s",
+                         boot_data_subdirs[i]);
+                snprintf(sub_dst, sizeof(sub_dst), "%s/%s", dstdir,
+                         boot_data_subdirs[i]);
+                boot_mkdirs(sub_dst);
+                sub_total = boot_copy_tree(mgr, sub_asset, sub_dst);
+                if (sub_total < 0) {
+                    rc = -1;
+                    break;
+                }
+                EWDX_LOGW("boot: data/%s staged (%d files)",
+                          boot_data_subdirs[i], sub_total);
+                rc += sub_total;
+            }
+        }
         if (rc < 0) {
             EWDX_LOGE("boot: data/ unpack failed (continuing)");
+            ewdx_boot_journal("data/ unpack failed (continuing)");
         } else if (rc == 0) {
-            EWDX_LOGW("boot: no data/ in APK (dev build? push via adb)");
+            // Loud: without data/ the script keeps running but every
+            // bmpload -> exist fails -> dialog -> #Error 12 (FILE_IO) at
+            // DGFONT/first text draw. Make the root cause unmissable.
+            EWDX_LOGE("boot: no data/ in APK -- game assets missing; "
+                      "pic loads will fail (bundle assets/data/ or adb push)");
+            ewdx_boot_journal("no data/ in APK (assets missing!)");
         } else {
-            fp = fopen(dst, "wb");
-            if (fp != NULL) {
-                fwrite("1\n", 1, 2, fp);
-                fclose(fp);
-            }
             EWDX_LOGW("boot: data/ unpacked (%d files)", rc);
             staged += rc;
+            // Verify the six pools actually landed (counts per staging map).
+            // Only then write the marker; on mismatch the next launch retries.
+            {
+                static const char *const pool[] = {
+                    "map", "mold", "mot", "music", "pic", "se" };
+                static const int expect[] = { 21, 62, 138, 10, 106, 253 };
+                int i, ok = 1;
+                for (i = 0; i < 6; i++) {
+                    char pdir[2200];
+                    int have;
+                    snprintf(pdir, sizeof(pdir), "%s/%s", dstdir, pool[i]);
+                    have = boot_count_files(pdir);
+                    EWDX_LOGW("boot: verify data/%s: %d/%d", pool[i], have,
+                              expect[i]);
+                    if (have < expect[i]) ok = 0;
+                }
+                if (ok) {
+                    fp = fopen(dst, "wb");
+                    if (fp != NULL) {
+                        fwrite("1\n", 1, 2, fp);
+                        fclose(fp);
+                    }
+                    ewdx_boot_journal("data/ verify OK (590 files)");
+                } else {
+                    EWDX_LOGE("boot: data/ verify MISMATCH -- retrying next "
+                              "launch (no marker written)");
+                    ewdx_boot_journal("data/ verify MISMATCH (will retry)");
+                }
+            }
         }
     }
     // save.dat: only when absent (never overwrite progress).
@@ -1087,6 +1169,9 @@ void ewdx_boot_crash_ui_init(void) {
         fclose(fp);
     }
     ewdx_boot_journal("=== run ===");
+    // Build tag: positively identify the binary that produced this log
+    // (2026-09-16 session analyzed err5fix logs believing they were newer).
+    ewdx_boot_journal("build " EWDX_BUILD_TAG);
 }
 
 void ewdx_boot_crash_clean(void) {

@@ -22,8 +22,11 @@
 #include "hsp3code.h"
 #include "hspvar_core.h"
 
+#include "ewdx_text.h"  // ewdx_sjis_to_utf8: SDL/JNI paths need UTF-8, not SJIS
+
 #include <stdio.h>
 #include <string.h>
+#include "ewdx_boot.h"
 
 #include <SDL.h>
 
@@ -62,27 +65,66 @@ static void ex_title(const char *s) {
     EWDX_LOGW("title: %s", s);
 }
 
+// Boot-phase journal of EXTCMD/EXTSYSVAR use ("ex: 0x.." lines in boot.log,
+// matching the 2026-09-12 device build's diagnostics). First use only per
+// opcode, so it stays quiet during normal gameplay.
+static void ex_journal_cmd(int cmd) {
+    static unsigned char seen[256];
+    char msg[32];
+    if ((cmd & ~0xff) != 0 || seen[cmd & 0xff]) return;
+    seen[cmd & 0xff] = 1;
+    snprintf(msg, sizeof(msg), "ex: 0x%02x", cmd);
+    ewdx_boot_journal(msg);
+}
+
 static int ex_cmdfunc(int cmd) {
     if (ex_ctx == NULL) throw(HSPERR_ILLEGAL_FUNCTION);
+    ex_journal_cmd(cmd);
     code_next();  // mandatory advance (EXTCMD convention)
     switch (cmd) {
     case EXCMD_DIALOG: {
         // dialog mes [, mode, title]: mode bit1 == info/error icon on Win.
         // Dish shows a message box; we log + SDL box (blocking, like Win).
-        char *mes = code_gets();
+        // NOTE: code_gets()/code_getds() return pointers into HSP's shared
+        // temp param buffer -- copy mes BEFORE fetching the title, or the
+        // title fetch overwrites it (seen on device: 'dialog: ERROR' was
+        // the title clobbering the picture-missing message). Same order
+        // and copy discipline as OpenHSP hsp3gr_wingui.cpp cmdfunc_dialog.
+        char mesbuf[1024];
+        char titlebuf[256];
+        {
+            char *mes = code_gets();
+            snprintf(mesbuf, sizeof(mesbuf), "%s", (mes != NULL) ? mes : "");
+        }
         int mode = code_getdi(0);
-        char *title = code_gets();
-        EWDX_LOGE("dialog: %s", mes);
+        {
+            // title is optional on real HSP (code_getds, default "").
+            char *title = code_getds("");
+            snprintf(titlebuf, sizeof(titlebuf), "%s", (title != NULL) ? title : "");
+        }
+        EWDX_LOGE("dialog: %s", mesbuf);
+        // SDL_ShowSimpleMessageBox -> JNI NewStringUTF on Android: raw SJIS
+        // bytes abort ART ('illegal start byte') and kill the whole process
+        // (2026-09-16 v3 run 1: dialog at ex:0x03, SIGABRT). Convert first.
         if (ewdx.win != NULL) {
+            char mes_u8[2048], title_u8[512];
+            ewdx_sjis_to_utf8(mesbuf, mes_u8, (int)sizeof(mes_u8));
+            ewdx_sjis_to_utf8(titlebuf, title_u8, (int)sizeof(title_u8));
             SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING,
-                                     (title != NULL && title[0]) ? title : "EchidnaWarsDX",
-                                     mes, ewdx.win);
+                                     title_u8[0] ? title_u8 : "EchidnaWarsDX",
+                                     mes_u8, ewdx.win);
         }
         (void)mode;
         return ex_stat(0);
     }
     case EXCMD_TITLE: {
         char *s = code_gets();
+        char u8[1024];
+        if (s != NULL && ewdx.win != NULL) {
+            // SDL_SetWindowTitle -> JNI NewStringUTF: same SJIS abort risk.
+            ewdx_sjis_to_utf8(s, u8, (int)sizeof(u8));
+            SDL_SetWindowTitle(ewdx.win, u8);
+        }
         ex_title(s);
         return ex_stat(0);
     }

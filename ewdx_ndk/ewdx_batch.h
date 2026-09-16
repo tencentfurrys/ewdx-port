@@ -35,6 +35,7 @@ int ewdx_copy_flags(int id, int flags);        // bit1=center bit2=abs-scale bit
 // Upload with D3DX colorkey parity: RGB(0,0,0) -> alpha 0. Returns -1 ok / 0 fail
 // (matches hmm stat convention: stat==0 triggers the script error path).
 int ewdx_loadmemory(const void *bmp, int size, int slot); // DGLOADMEMORY
+int ewdx_loadmemory_png(const void *png, int size, int slot); // PNG-renamed .bmp files (title1, obj_sp)
 
 // Primitive path (best-effort; 13 ADD/DRAW pairs in script, effects only)
 int ewdx_createprim(int n);                    // DGCREATEPRIMITIVE

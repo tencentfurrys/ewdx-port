@@ -34,7 +34,13 @@ static int ewdx_ovplay_cmdfunc(int cmd) {
     code_next();  // mandatory advance, EXTCMD convention
     switch (cmd) {
     case 0: {  // init (DirectSound probe on Windows; always present here)
-        return ov_stat(ewdx_audio_init());
+        // ewdx_audio_init returns -1=ok (internal convention, also for
+        // double-init). The script checks stat!=0 as FAILURE here and opens a
+        // "DirectSound...\x82\xB8\x94s" dialog -> stat must be 0 on success.
+        // (2026-09-16 v3: the inversion fired a bogus failure dialog whose
+        // raw-SJIS text aborted ART via NewStringUTF, killing the process.)
+        ewdx_audio_init();
+        return ov_stat(0);
     }
     case 1: {  // decode OGG from HSP memory buffer
         PVal *pv;

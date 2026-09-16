@@ -59,6 +59,11 @@ static int sjis_to_utf8(const char *src, char *dst, int cap) {
     return n;
 }
 
+// Public wrapper for shims that cross the SDL/JNI boundary (dialog/title).
+int ewdx_sjis_to_utf8(const char *src, char *dst, int cap) {
+    return sjis_to_utf8(src, dst, cap);
+}
+
 // --- font + string cache ---
 
 typedef struct { int size; TTF_Font *font; int age; } TextFont;

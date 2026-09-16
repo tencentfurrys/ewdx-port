@@ -35,6 +35,20 @@ All work below was executed and verified on 2026-09-11/12.
       `start.ax` bundled, HSP symbols verified in `libmain.so`
 - [ ] On-device run to title (needs game `data/` tree + device; first
       launch unpacks `data/`, logcat `ewdx:` traces probe -> VM ready)
+      2026-09-12 run: VM + plugins + audio + DG init all WORK on device
+      (SM-F9660); run stopped at first `bmpload` because the APK was built
+      WITHOUT `assets/data/` -> missing-file dialog -> `bload` on
+      `strsize==-1` -> `#Error 12` (FILE_IO); process later killed by the
+      cached-app freezer (not a native crash). Full timeline:
+      `analysis/crash_2026-09-12_device_run.md`. Fixes: dialog shim
+      param-buffer aliasing + optional title (`code_getds`), loud
+      `no data/ in APK` boot journal. Gate re-verified green on both TUs.
+      2026-09-16 runs (v2 build tag): `data/` asset-recurse fix CONFIRMED on
+      device (`unpack (590 files)` + `verify OK`), VM + vsave + title green,
+      then hang inside `dmmini` — `ewdx_audio_init()` self-deadlocked `au_mtx`
+      (prefills call `ewdx_audio_fill` under the same non-recursive mutex).
+      Fix (v3): init/OpenSL start lock-free + per-step `audio: <step> failed`
+      journal. Timeline: `analysis/crash_2026-09-12_device_run.md`.
 
 ## 1. Environment (build host)
 

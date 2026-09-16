@@ -7,6 +7,12 @@
 #include <math.h>
 #include <string.h>
 
+// PNG decode for the game's PNGs-renamed-to-.bmp (title1.bmp, obj_sp.bmp);
+// mirrors the BMP tail of ewdx_loadmemory (flip + black colorkey).
+#define STBI_NO_STDIO
+#include "thirdparty/stb_image.h"
+#include "ewdx_log.h"
+
 float ewdx_sinLut[256];
 float ewdx_cosLut[256];
 
@@ -197,6 +203,13 @@ int ewdx_loadmemory(const void *bmp, int size, int slot) {
     static int first = 1;
     if (!bmp || size <= 0 || slot < 0 || slot >= EWDX_MAX_BUFFERS) return 0;
     ewdx_flush();  // queued quads may sample this slot's old pixels
+    // Magic sniff: the game's data ships a few PNGs renamed to .bmp (title1,
+    // obj_sp) and the original hmm.dll sniffs+decodes both. SDL only does BMP.
+    if (size >= 8 &&
+        ((const uint8_t *)bmp)[0] == 0x89 && ((const uint8_t *)bmp)[1] == 0x50 &&
+        ((const uint8_t *)bmp)[2] == 0x4E && ((const uint8_t *)bmp)[3] == 0x47) {
+        return ewdx_loadmemory_png(bmp, size, slot);
+    }
     SDL_RWops *rw = SDL_RWFromConstMem(bmp, size);
     if (!rw) return 0;
     SDL_Surface *sf = SDL_LoadBMP_RW(rw, 1);
@@ -253,6 +266,55 @@ int ewdx_loadmemory(const void *bmp, int size, int slot) {
         char msg[96];
         first = 0;
         snprintf(msg, sizeof(msg), "first texture up (slot %d, %dx%d)", slot, W, H);
+        ewdx_boot_journal(msg);
+    }
+    return -1;
+}
+
+int ewdx_loadmemory_png(const void *png, int size, int slot) {
+    int W, H, ch;
+    uint8_t *px = (uint8_t *)stbi_load_from_memory(
+        (const stbi_uc *)png, size, &W, &H, &ch, 4);
+    if (px == NULL) {
+        EWDX_LOGE("loadmem: PNG decode failed (slot %d, %d bytes): %s",
+                  slot, size, stbi_failure_reason());
+        return 0;
+    }
+    uint8_t *out = (uint8_t *)SDL_malloc((size_t)W * H * 4);
+    if (out == NULL) { stbi_image_free(px); return 0; }
+    for (int y = 0; y < H; y++) {
+        const uint8_t *srow = px + (size_t)(H - 1 - y) * W * 4;
+        uint8_t *drow = out + (size_t)y * W * 4;
+        for (int x = 0; x < W; x++) {
+            uint8_t r = srow[x*4+0], g = srow[x*4+1], b = srow[x*4+2];
+            uint8_t a = srow[x*4+3];
+            if (a == 255 && r == COLORKEY_R && g == COLORKEY_G && b == COLORKEY_B)
+                a = 0;  // black colorkey, same as BMP path
+            drow[x*4+0] = r; drow[x*4+1] = g; drow[x*4+2] = b; drow[x*4+3] = a;
+        }
+    }
+    stbi_image_free(px);
+    EwdxBuffer *t = &ewdx.buf[slot];
+    if (t->valid && t->tex) {
+        if (t->w != W || t->h != H) {
+            glDeleteTextures(1, &t->tex);
+            t->tex = 0;
+        }
+        if (t->fbo) { glDeleteFramebuffers(1, &t->fbo); t->fbo = 0; }
+    }
+    if (!t->tex) glGenTextures(1, &t->tex);
+    glBindTexture(GL_TEXTURE_2D, t->tex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, W, H, 0, GL_RGBA, GL_UNSIGNED_BYTE, out);
+    SDL_free(out);
+    t->w = W; t->h = H; t->valid = 1;
+    t->vflip = 0;
+    {
+        char msg[96];
+        snprintf(msg, sizeof(msg), "loadmem: PNG decoded (slot %d, %dx%d)", slot, W, H);
         ewdx_boot_journal(msg);
     }
     return -1;

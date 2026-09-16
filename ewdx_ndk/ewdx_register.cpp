@@ -31,6 +31,7 @@
 #include "ewdx_ovplay.h"
 #include "ewdx_paths.h"
 #include "ewdx_log.h"
+#include "ewdx_boot.h"
 #include "ewdx_register.h"
 
 static HSPCTX *rc_ctx = NULL;
@@ -79,7 +80,8 @@ static EwdxCmd ewdx_lookup(const char *nm) {
         if (strcmp(nm, "_DGPOS@16") == 0) return EWDX_DGPOS;
         if (strcmp(nm, "_DGRECT@16") == 0) return EWDX_DGRECT;
         if (strcmp(nm, "_DGSCALEANDANGLE@16") == 0) return EWDX_DGSCALE;
-        if (strcmp(nm, "_DGCOPY@16") == 0) return EWDX_DGCOPY;
+        if (strcmp(nm, "_DGCOPY@16") == 0) return EWDX_DGCOPY;   // unused-by-game alias kept for parity
+        if (strcmp(nm, "_DGGCOPY@16") == 0) return EWDX_DGCOPY;  // real import (start.ax #func; missed -> #Error 21 at title)
         if (strcmp(nm, "_DGTEXTURE@16") == 0) return EWDX_DGTEXTURE;
         if (strcmp(nm, "_DGLOADMEMORY@16") == 0) return EWDX_DGLOADMEM;
         if (strcmp(nm, "_DGCREATEPRIMITIVE@16") == 0) return EWDX_DGCREATEPRIM;
@@ -655,6 +657,24 @@ static int rc_dg_4i(EwdxCmd id, int a, int b, int c, int d) {
     return 0;
 }
 
+// Boot-phase journal: first use of each DLL command goes to filesDir/boot.log
+// (same journal the crash UI reads). Reproduces the per-new-call "dll: <name>"
+// lines of the 2026-09-12 device build without flooding during normal play:
+// names are stable DS pointers, so a pointer table deduplicates by name.
+static void rc_journal_dll(const char *nm) {
+    static const char *seen[128];
+    static int seen_n = 0;
+    char msg[160];
+    int i;
+    if (nm == NULL || nm[0] == '\0') return;
+    for (i = 0; i < seen_n; i++) {
+        if (seen[i] == nm) return;
+    }
+    if (seen_n < (int)(sizeof(seen) / sizeof(seen[0]))) seen[seen_n++] = nm;
+    snprintf(msg, sizeof(msg), "dll: %s", nm);
+    ewdx_boot_journal(msg);
+}
+
 static int rc_cmdfunc_dllcmd(int cmd) {
     HSPHED *hed;
     STRUCTDAT *st;
@@ -671,6 +691,7 @@ static int rc_cmdfunc_dllcmd(int cmd) {
     if (st->nameidx < 0 || (hed != NULL && st->nameidx >= hed->max_ds)) throw(HSPERR_SYNTAX);
     nm = &rc_ctx->mem_mds[st->nameidx];
     id = ewdx_lookup(nm);
+    rc_journal_dll(nm);
 
     code_next();  // mandatory: advance past the command before pulling args
 
@@ -1039,6 +1060,13 @@ static int rc_cmdfunc_dllcmd(int cmd) {
     default:
         break;
     }
+    {
+        // Name the missing command loudly: a bare #Error 21 gives no clue.
+        char msg[160];
+        snprintf(msg, sizeof(msg), "UNSUPPORTED dll command (check lookup): %s", nm);
+        EWDX_LOGE("%s", msg);
+        ewdx_boot_journal(msg);
+    }
     throw(HSPERR_UNSUPPORTED_FUNCTION);
     return RUNMODE_RUN;
 }
@@ -1064,6 +1092,7 @@ static void *rc_reffunc_dllcmd(int *type_res, int arg) {
     if (st->nameidx < 0 || (hed != NULL && st->nameidx >= hed->max_ds)) throw(HSPERR_SYNTAX);
     nm = &rc_ctx->mem_mds[st->nameidx];
     if (ewdx_lookup(nm) != EWDX_TGETTIME) throw(HSPERR_SYNTAX);
+    rc_journal_dll(nm);
 
     type = rc_exinfo->nptype;
     val = rc_exinfo->npval;

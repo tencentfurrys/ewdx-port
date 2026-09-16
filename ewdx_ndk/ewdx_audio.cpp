@@ -24,6 +24,7 @@
 #include "thirdparty/stb_vorbis.c"
 
 #include "ewdx_audio.h"
+#include "ewdx_log.h"
 #include "ewdx_paths.h"
 #include "ewdx_log.h"
 
@@ -593,6 +594,8 @@ static void au_sl_teardown(void) {
     au_sl_running = 0;
 }
 
+#define AU_FAIL(tag) do { EWDX_LOGW("audio: %s failed (0x%x)", tag, (int)r); au_sl_teardown(); return 0; } while (0)
+
 static int au_sl_start(void) {
     SLresult r;
     SLEngineItf eng;
@@ -606,15 +609,15 @@ static int au_sl_start(void) {
     const SLboolean req[1] = { SL_BOOLEAN_TRUE };
 
     r = slCreateEngine(&au_sl_eng, 0, NULL, 0, NULL, NULL);
-    if (r != SL_RESULT_SUCCESS) return 0;
+    if (r != SL_RESULT_SUCCESS) AU_FAIL("engine-create");
     r = (*au_sl_eng)->Realize(au_sl_eng, SL_BOOLEAN_FALSE);
-    if (r != SL_RESULT_SUCCESS) { au_sl_teardown(); return 0; }
+    if (r != SL_RESULT_SUCCESS) AU_FAIL("engine-realize");
     r = (*au_sl_eng)->GetInterface(au_sl_eng, SL_IID_ENGINE, &eng);
-    if (r != SL_RESULT_SUCCESS) { au_sl_teardown(); return 0; }
+    if (r != SL_RESULT_SUCCESS) AU_FAIL("engine-iface");
     r = (*eng)->CreateOutputMix(eng, &au_sl_mix, 0, NULL, NULL);
-    if (r != SL_RESULT_SUCCESS) { au_sl_teardown(); return 0; }
+    if (r != SL_RESULT_SUCCESS) AU_FAIL("mix-create");
     r = (*au_sl_mix)->Realize(au_sl_mix, SL_BOOLEAN_FALSE);
-    if (r != SL_RESULT_SUCCESS) { au_sl_teardown(); return 0; }
+    if (r != SL_RESULT_SUCCESS) AU_FAIL("mix-realize");
 
     loc_bq.locatorType = SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE;
     loc_bq.numBuffers = 2;
@@ -633,36 +636,42 @@ static int au_sl_start(void) {
     sink.pFormat = NULL;
 
     r = (*eng)->CreateAudioPlayer(eng, &au_sl_play, &src, &sink, 1, ids, req);
-    if (r != SL_RESULT_SUCCESS) { au_sl_teardown(); return 0; }
+    if (r != SL_RESULT_SUCCESS) AU_FAIL("player-create");
     r = (*au_sl_play)->Realize(au_sl_play, SL_BOOLEAN_FALSE);
-    if (r != SL_RESULT_SUCCESS) { au_sl_teardown(); return 0; }
+    if (r != SL_RESULT_SUCCESS) AU_FAIL("player-realize");
     r = (*au_sl_play)->GetInterface(au_sl_play, SL_IID_PLAY, &play);
-    if (r != SL_RESULT_SUCCESS) { au_sl_teardown(); return 0; }
+    if (r != SL_RESULT_SUCCESS) AU_FAIL("play-iface");
     r = (*au_sl_play)->GetInterface(au_sl_play, SL_IID_BUFFERQUEUE, &au_sl_bq);
-    if (r != SL_RESULT_SUCCESS) { au_sl_teardown(); return 0; }
+    if (r != SL_RESULT_SUCCESS) { EWDX_LOGW("audio: bq iface failed 0x%x", r); au_sl_teardown(); return 0; }
     r = (*au_sl_bq)->RegisterCallback(au_sl_bq, au_sl_cb, NULL);
-    if (r != SL_RESULT_SUCCESS) { au_sl_teardown(); return 0; }
+    if (r != SL_RESULT_SUCCESS) { EWDX_LOGW("audio: regcb failed 0x%x", r); au_sl_teardown(); return 0; }
 
+    // Fill+enqueue OUTSIDE au_mtx: ewdx_audio_fill locks au_mtx, and our caller
+    // (ewdx_audio_init) already holds it -> self-deadlock hung dmmini forever
+    // (2026-09-16 device run: black screen, no sound, journal stopped at _dmmini).
+    au_sl_idx = 0;
     ewdx_audio_fill(au_sl_buf[0], EWDX_BQ_FRAMES);
     ewdx_audio_fill(au_sl_buf[1], EWDX_BQ_FRAMES);
     r = (*au_sl_bq)->Enqueue(au_sl_bq, au_sl_buf[0],
                              (SLuint32)(EWDX_BQ_FRAMES * 2u * sizeof(int16_t)));
-    if (r != SL_RESULT_SUCCESS) { au_sl_teardown(); return 0; }
+    if (r != SL_RESULT_SUCCESS) { EWDX_LOGW("audio: enq0 failed 0x%x", r); au_sl_teardown(); return 0; }
     r = (*au_sl_bq)->Enqueue(au_sl_bq, au_sl_buf[1],
                              (SLuint32)(EWDX_BQ_FRAMES * 2u * sizeof(int16_t)));
-    if (r != SL_RESULT_SUCCESS) { au_sl_teardown(); return 0; }
+    if (r != SL_RESULT_SUCCESS) { EWDX_LOGW("audio: enq1 failed 0x%x", r); au_sl_teardown(); return 0; }
+    au_sl_idx = 1;  // first cb flips to 0 = the buffer just consumed
     r = (*play)->SetPlayState(play, SL_PLAYSTATE_PLAYING);
-    if (r != SL_RESULT_SUCCESS) { au_sl_teardown(); return 0; }
-    au_sl_idx = 1;
+    if (r != SL_RESULT_SUCCESS) { EWDX_LOGW("audio: playstate failed 0x%x", r); au_sl_teardown(); return 0; }
     au_sl_running = 1;
     return 1;
 }
 #endif  // !EWDX_AUDIO_NULL_BACKEND
 
 int ewdx_audio_init(void) {
-    std::lock_guard<std::mutex> lk(au_mtx);
     int v;
+    int started;
     if (au_ready) return -1;
+    // NOTE: do NOT hold au_mtx across au_sl_start(): the buffer prefills call
+    // ewdx_audio_fill() which locks au_mtx -> self-deadlock (2026-09-16 hang).
     for (v = 0; v < EWDX_VOICES; v++) {
         au_voices[v].active = 0;
         au_voices[v].pcm = NULL;
@@ -670,12 +679,22 @@ int ewdx_audio_init(void) {
     au_bgm.has_track = 0;
     au_bgm.active = 0;
 #ifndef EWDX_AUDIO_NULL_BACKEND
-    if (!au_sl_start()) {
-        // No output device: keep mixer alive so gameplay stays silent-safe.
-        // dmm stat still reports ok (script has no audio-fail path).
+    started = au_sl_start();
+    {
+        std::lock_guard<std::mutex> lk(au_mtx);
+        if (!started) {
+            // No output device: keep mixer alive so gameplay stays silent-safe.
+            // dmm stat still reports ok (script has no audio-fail path).
+            EWDX_LOGW("audio: opensl unavailable (silent-safe)");
+        }
+        au_ready = 1;
+    }
+#else
+    {
+        std::lock_guard<std::mutex> lk(au_mtx);
+        au_ready = 1;
     }
 #endif
-    au_ready = 1;
     return -1;
 }
 

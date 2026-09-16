@@ -19,4 +19,9 @@ int ewdx_text_font(const char *name, int size);    // DGFONT
 int ewdx_text_draw(const char *sjis, int x, int y);  // DGDRAWTEXT (absolute px)
 void ewdx_text_shutdown(void);  // called from ewdx_shutdown (before SDL_Quit)
 
+// Shared converter: SJIS/CP932 -> UTF-8 (same table as DGDRAWTEXT). Used by
+// dialog/title shims before any SDL/JNI boundary -- raw SJIS bytes abort ART
+// (NewStringUTF "illegal start byte") and kill the whole process.
+int ewdx_sjis_to_utf8(const char *src, char *dst, int cap);
+
 #endif
