@@ -19,7 +19,7 @@
 
 // Bump per shipped build; journaled right after "=== run ===" so every
 // collected log positively identifies the binary that produced it.
-#define EWDX_BUILD_TAG "v6-2026-09-16-dggcopy"
+#define EWDX_BUILD_TAG "v10-2026-09-17-egl-surface"
 
 #include <stdio.h>
 #include <stdlib.h>

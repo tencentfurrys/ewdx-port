@@ -144,6 +144,10 @@ int ewdx_input_poll(void) {
             pad = NULL;  // next poll re-scans; stale handle never touched
             pad_mask = 0;
             break;
+        case SDL_WINDOWEVENT:
+            if (ev.window.event == SDL_WINDOWEVENT_SIZE_CHANGED)
+                ewdx_apply_screen_viewport();  // re-fit letterbox (rotation)
+            break;
         default:
             break;
         }
@@ -155,13 +159,26 @@ int ewdx_input_poll(void) {
 int ewdx_input_buttons(void) {
     int m = key_mask | pad_mask;
     int i;
+    // Touch geometry: finger coords are normalized against the FULL screen
+    // drawable, but game-space pixels (scr_w x scr_h) live inside the centered
+    // letterbox subrect. Convert stick displacement to game px so the 12 px
+    // deadzone keeps its meaning regardless of device resolution.
     float sw = (ewdx.scr_w > 0) ? (float)ewdx.scr_w : 640.0f;
     float sh = (ewdx.scr_h > 0) ? (float)ewdx.scr_h : 480.0f;
+    float gx = 1.0f, gy = 1.0f;  // drawable px per game px (letterbox scale)
+    {
+        int dw = 0, dh = 0;
+        ewdx_surface_px(&dw, &dh);  // EGL ground truth (SDL lies on Android)
+        if (dw > 0 && dh > 0 && ewdx.viewport[2] > 0 && ewdx.viewport[3] > 0) {
+            gx = (float)ewdx.viewport[2] / sw;
+            gy = (float)ewdx.viewport[3] / sh;
+        }
+    }
     for (i = 0; i < EWDX_MAX_FINGERS; i++) {
         if (!fingers[i].used) continue;
         if (fingers[i].side == 0) {
-            float dx = (fingers[i].x - fingers[i].ox) * sw;
-            float dy = (fingers[i].y - fingers[i].oy) * sh;
+            float dx = (fingers[i].x - fingers[i].ox) * sw * gx;
+            float dy = (fingers[i].y - fingers[i].oy) * sh * gy;
             if (dx < -EWDX_DEADZONE_PX) m |= EWDX_JOY_LEFT;
             if (dx > EWDX_DEADZONE_PX) m |= EWDX_JOY_RIGHT;
             if (dy < -EWDX_DEADZONE_PX) m |= EWDX_JOY_UP;

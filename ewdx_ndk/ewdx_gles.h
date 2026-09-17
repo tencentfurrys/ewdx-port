@@ -47,6 +47,10 @@ typedef struct {
     SDL_Window *win;
     SDL_GLContext ctx;
     int scr_w, scr_h;
+    // Letterboxed fullscreen (Android): the target-0 viewport maps the game
+    // view (scr_w x scr_h) into a centered aspect-locked subrect of the real
+    // window drawable. viewport[2/3] = pixel w/h (0 = off => full drawable).
+    int viewport[4];
     EwdxBuffer buf[EWDX_MAX_BUFFERS];
     int target;               // DGGSEL current render target
     EwdxDrawState st;         // current draw state
@@ -69,5 +73,7 @@ int ewdx_present(void);                       // DGREDRAW
 int ewdx_apply_blend(int mode);               // DGBLENDMODE -> glBlendFunc
 int ewdx_shutdown(void);                      // DGEND
 void ewdx_apply_viewport(void);               // viewport := current target dims
+void ewdx_apply_screen_viewport(void);        // target-0 letterbox (full-screen fit)
+void ewdx_surface_px(int *dw, int *dh);       // REAL GL drawable px (EGL on Android)
 
 #endif

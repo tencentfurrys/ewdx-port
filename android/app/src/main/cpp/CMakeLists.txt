@@ -81,12 +81,17 @@ add_library(ewdx STATIC
     "../../../../../ewdx_ndk/ewdx_boot.cpp"
     "../../../../../ewdx_ndk/ewdx_extcmd.cpp"
     "../../../../../ewdx_ndk/thirdparty/stb_vorbis.c"
+    "../../../../../ewdx_ndk/thirdparty/stb_image_impl.c"
 )
-# Third-party decoder: silence warnings, slim to pull-from-memory + s16.
+# Third-party decoders: silence warnings, slim to pull-from-memory only.
 set_source_files_properties(
     "../../../../../ewdx_ndk/thirdparty/stb_vorbis.c" PROPERTIES
     COMPILE_OPTIONS "-w"
     COMPILE_DEFINITIONS "STB_VORBIS_NO_PUSHDATA_API;STB_VORBIS_NO_STDIO"
+)
+set_source_files_properties(
+    "../../../../../ewdx_ndk/thirdparty/stb_image_impl.c" PROPERTIES
+    COMPILE_OPTIONS "-w"
 )
 # 64-bit HSP VM (silences hsp3struct.h #warning; matches arm64 pointers).
 target_compile_definitions(ewdx PUBLIC HSP64)
@@ -109,6 +114,7 @@ target_link_libraries(main
     ewdx
     SDL2
     GLESv2
+    EGL
     OpenSLES
     log
     android

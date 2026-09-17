@@ -6,6 +6,9 @@
 #include "ewdx_paths.h"
 #include "ewdx_boot.h"
 #include <string.h>
+#ifdef __ANDROID__
+#include <EGL/egl.h>
+#endif
 
 EwdxGles ewdx;
 
@@ -89,7 +92,75 @@ void ewdx_apply_viewport(void) {
     int h = (ewdx.target == 0) ? ewdx.scr_h : ewdx.buf[ewdx.target].h;
     if (w <= 0) w = (ewdx.scr_w > 0) ? ewdx.scr_w : 1;
     if (h <= 0) h = (ewdx.scr_h > 0) ? ewdx.scr_h : 1;
+    // Target 0 (Android): the window drawable is the full device screen while
+    // game coords are scr_w x scr_h (e.g. 640x480). Draw into a centered
+    // aspect-locked subrect so the whole game view fills the screen; NDC is
+    // viewport-relative, so nothing else needs to change. Without this the
+    // game rendered into a scr-sized corner of the display.
+    if (ewdx.target == 0 && ewdx.viewport[2] > 0 && ewdx.viewport[3] > 0) {
+        glViewport(ewdx.viewport[0], ewdx.viewport[1],
+                   ewdx.viewport[2], ewdx.viewport[3]);
+        return;
+    }
     glViewport(0, 0, w, h);
+}
+
+// Real GL drawable size in pixels. CRITICAL on Android: SDL reports the
+// REQUESTED window size (640x480) there, not the actual surface — the GL
+// drawable is the full-screen EGL surface. Querying EGL directly is ground
+// truth; without it the letterbox math saw 640x480, did nothing, and the
+// game rendered into a 640x480 bottom-left corner of the display.
+void ewdx_surface_px(int *dw, int *dh) {
+#ifdef __ANDROID__
+    EGLDisplay d = eglGetCurrentDisplay();
+    EGLSurface s = eglGetCurrentSurface(EGL_DRAW);
+    if (d != EGL_NO_DISPLAY && s != EGL_NO_SURFACE &&
+        eglQuerySurface(d, s, EGL_WIDTH, dw) &&
+        eglQuerySurface(d, s, EGL_HEIGHT, dh) && *dw > 0 && *dh > 0) {
+        return;
+    }
+#endif
+    SDL_GL_GetDrawableSize(ewdx.win, dw, dh);
+}
+
+// Recompute the target-0 letterbox subrect against the real drawable size:
+// whole game view scaled to fit, centered, aspect locked.
+void ewdx_apply_screen_viewport(void) {
+    int dw = 0, dh = 0;
+    ewdx_surface_px(&dw, &dh);
+    if (dw <= 0 || dh <= 0) {
+        ewdx.viewport[0] = 0; ewdx.viewport[1] = 0;
+        ewdx.viewport[2] = 0; ewdx.viewport[3] = 0;
+        return;
+    }
+    int gw = (ewdx.scr_w > 0) ? ewdx.scr_w : 640;
+    int gh = (ewdx.scr_h > 0) ? ewdx.scr_h : 480;
+    if (dw * gh < dh * gw) {           // drawable taller: pillarbox sides
+        ewdx.viewport[2] = dw;
+        ewdx.viewport[3] = dw * gh / gw;
+        ewdx.viewport[0] = 0;
+        ewdx.viewport[1] = (dh - ewdx.viewport[3]) / 2;
+    } else {                           // drawable wider (or exact): letterbox
+        ewdx.viewport[2] = dh * gw / gh;
+        ewdx.viewport[3] = dh;
+        ewdx.viewport[0] = (dw - ewdx.viewport[2]) / 2;
+        ewdx.viewport[1] = 0;
+    }
+    {
+        // One-shot per geometry: numeric proof in the boot journal.
+        static int last_w = -1, last_h = -1;
+        if (ewdx.viewport[2] != last_w || ewdx.viewport[3] != last_h) {
+            char msg[128];
+            snprintf(msg, sizeof(msg),
+                     "viewport: surface %dx%d game %dx%d -> [%d,%d %dx%d]",
+                     dw, dh, gw, gh, ewdx.viewport[0], ewdx.viewport[1],
+                     ewdx.viewport[2], ewdx.viewport[3]);
+            ewdx_boot_journal(msg);
+            last_w = ewdx.viewport[2];
+            last_h = ewdx.viewport[3];
+        }
+    }
+    ewdx_apply_viewport();
 }
 
 int ewdx_screen(int w, int h, int mode) {
@@ -123,7 +194,9 @@ int ewdx_screen(int w, int h, int mode) {
     }
     ewdx.scr_w = w;
     ewdx.scr_h = h;
-    ewdx_apply_viewport();  // viewport follows the current target, not always screen
+    ewdx.viewport[0] = 0; ewdx.viewport[1] = 0;
+    ewdx.viewport[2] = 0; ewdx.viewport[3] = 0;
+    ewdx_apply_screen_viewport();  // target-0 letterbox + viewport for new size
     return -1;
 }
 
@@ -185,6 +258,23 @@ int ewdx_present(void) {
     static int first = 1;
     ewdx_flush();  // step (c): drain quad batcher before swap
     if (ewdx.target != 0) ewdx_select(0);
+    // Letterbox bars are NOT cleared by the game (its DGCLEAR only covers the
+    // 640x480 view); paint them black here over the full drawable.
+    {
+        int dw = 0, dh = 0;
+        ewdx_surface_px(&dw, &dh);
+        if (dw > 0 && dh > 0 &&
+            (ewdx.viewport[2] <= 0 || ewdx.viewport[3] <= 0 ||
+             ewdx.viewport[0] > 0 || ewdx.viewport[1] > 0 ||
+             ewdx.viewport[0] + ewdx.viewport[2] < dw ||
+             ewdx.viewport[1] + ewdx.viewport[3] < dh)) {
+            glDisable(GL_SCISSOR_TEST);
+            glViewport(0, 0, dw, dh);
+            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
+            ewdx_apply_viewport();  // back to the game-view subrect
+        }
+    }
     SDL_GL_SwapWindow(ewdx.win);
     if (first) { first = 0; ewdx_boot_journal("first present"); }
     return -1;

@@ -217,17 +217,20 @@ int ewdx_loadmemory(const void *bmp, int size, int slot) {
     SDL_Surface *cv = SDL_ConvertSurfaceFormat(sf, SDL_PIXELFORMAT_ABGR8888, 0);
     SDL_FreeSurface(sf);
     if (!cv) return 0;
-    // ABGR8888 bytes on LE = R,G,B,A order in memory. Flip rows (GL v=0 is
-    // bottom; D3DX BMP load presents v=0 as top) + apply colorkey.
+    // ABGR8888 bytes on LE = R,G,B,A order in memory. Rows are uploaded in
+    // FILE ORDER (no flip): with the port's NDC mapping, texture row 0 already
+    // lands at the TOP of the screen — flipping here put the whole game upside
+    // down (this matches the uncommitted "flipfix" verified in the working
+    // v7 binary). Then apply the black colorkey.
     int W = cv->w, H = cv->h;
     int pitch = cv->pitch;
-    // Simple correct approach: build a fresh flipped+keyed buffer.
+    // Simple correct approach: build a fresh keyed buffer.
     uint8_t *out = (uint8_t *)SDL_malloc(W * H * 4);
     if (!out) { SDL_FreeSurface(cv); return 0; }
     int bpp = cv->format->BytesPerPixel;
     uint8_t *base = (uint8_t *)cv->pixels;
     for (int y = 0; y < H; y++) {
-        uint8_t *srow = base + (H - 1 - y) * pitch;
+        uint8_t *srow = base + (size_t)y * pitch;
         uint8_t *drow = out + y * W * 4;
         for (int x = 0; x < W; x++) {
             uint8_t r, g, b, a;
@@ -280,10 +283,13 @@ int ewdx_loadmemory_png(const void *png, int size, int slot) {
                   slot, size, stbi_failure_reason());
         return 0;
     }
+    // stb decodes top-down; upload rows in decode order (no flip) — with the
+    // port's NDC mapping row 0 lands at the top of the screen. Flipping here
+    // put PNGs upside down (uncommitted v7 "flipfix" parity).
     uint8_t *out = (uint8_t *)SDL_malloc((size_t)W * H * 4);
     if (out == NULL) { stbi_image_free(px); return 0; }
     for (int y = 0; y < H; y++) {
-        const uint8_t *srow = px + (size_t)(H - 1 - y) * W * 4;
+        const uint8_t *srow = px + (size_t)y * W * 4;
         uint8_t *drow = out + (size_t)y * W * 4;
         for (int x = 0; x < W; x++) {
             uint8_t r = srow[x*4+0], g = srow[x*4+1], b = srow[x*4+2];

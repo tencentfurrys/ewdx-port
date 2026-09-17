@@ -5,6 +5,7 @@
 
 typedef struct {
     int scr_w, scr_h;
+    int viewport[4];  // target-0 letterbox (unused by input tests; kept in sync)
 } EwdxGles;
 
 extern EwdxGles ewdx;
