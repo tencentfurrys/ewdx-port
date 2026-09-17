@@ -1,4 +1,4 @@
-// ewdx_input.h - DI* input layer: touch dpad + keys + gamepad -> joyg mask.
+// ewdx_input.h - DI* input layer: full-screen touch gestures + keys + pad.
 //
 // joyg bit layout, decoded from #deffunc joystick (start_ax_dump.hsp L945):
 //   bit0 UP(38) bit1 DOWN(40) bit2 LEFT(37) bit3 RIGHT(39)
@@ -7,15 +7,20 @@
 //   physical button indices the script maps itself).
 //
 // Sources (SDLActivity owns the NDK input queue; SDL delivers the events):
-//   touch ..... left half = virtual stick (dynamic origin, 12 px deadzone,
-//             diagonals allowed); right half = action zones (first finger
-//             bit4/Z, second bit5/X). Landscape logical 640x480/1280x960.
+//   touch ..... WHOLE screen is the gesture surface (v12 "UI touch", no
+//             on-screen buttons; the game's menus are bitmask-driven and
+//             never read mousex/mousey/mstat, so gestures -> mask directly):
+//             primary finger drag -> bits0-3 (arrows; game-px deadzone via
+//             the letterbox viewport), primary TAP (<400 ms, <18 game px)
+//             -> Z latch consumed by the next buttons() read, second
+//             finger (anywhere) -> X/confirm-cancel while held.
+//             Landscape logical 640x480/1280x960.
 //   keyboard .. arrows -> bits0-3 (checked via getkey path too), Z/X/C/A/S/D
 //             (scancodes, layout-independent) -> bits4-9.
 //   gamepad ... first SDL_GameController: dpad+left stick -> bits0-3,
 //             A/B/X/Y/shoulders -> bits4-9, START/BACK -> bits4/5.
 // Mouse is deliberately ignored (Android touch-emulated mouse would
-// double-drive the stick).
+// double-drive the gestures).
 //
 // Pumping: ewdx_input_poll() drains the SDL queue; the register calls it on
 // every DGREDRAW (frame boundary) and every DIGETJOYSTATE (input read), so no

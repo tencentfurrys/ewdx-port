@@ -1,9 +1,10 @@
 // test_input.cpp - host verification for ewdx_input (synthetic SDL events).
 //
-// Covers: arrow/button scancodes + release clearing, touch stick deadzone +
-// directions + diagonals + release, right-half button zones + arrival order,
-// key+touch combination, poll idempotence. Gamepad path contributes 0 with no
-// device attached (implicitly asserted by exact mask equality throughout).
+// Covers: arrow/button scancodes + release clearing, full-screen gesture
+// touch (v12): drag deadzone + directions + diagonals, tap latch (confirm,
+// one read), drag cancels tap, second-finger cancel, key+touch combination,
+// poll idempotence. Gamepad path contributes 0 with no device attached
+// (implicitly asserted by exact mask equality throughout).
 //
 // Build (MinGW + host SDL2 static, from the workspace root):
 //   g++ -std=c++17 -I ewdx-port/ewdx_ndk/tests/shim -I ewdx-port/ewdx_ndk
@@ -20,6 +21,10 @@
 #include "ewdx_gles.h"  // shim: scr_w/scr_h only
 
 EwdxGles ewdx;
+
+// shim stubs: input only needs scr_w/scr_h; GLES helpers are no-ops here
+int ewdx_surface_px(int* w, int* h) { *w = ewdx.scr_w; *h = ewdx.scr_h; return (*w > 0 && *h > 0); }
+void ewdx_apply_screen_viewport(void) {}
 
 static int failures = 0;
 static int checks = 0;
@@ -81,10 +86,10 @@ int main(void) {
     push_key(SDL_KEYUP, SDL_SCANCODE_Q);
     ewdx_input_poll();
 
-    // --- touch stick: deadzone then right ---
+    // --- gesture drag: deadzone then right (whole screen, any origin) ---
     push_finger(SDL_FINGERDOWN, 1, 0.20f, 0.50f);
     ewdx_input_poll();
-    CHECK(ewdx_input_buttons() == 0);  // no deflection yet
+    CHECK(ewdx_input_buttons() == 0);  // finger down, no deflection, no tap yet
     push_finger(SDL_FINGERMOTION, 1, 0.205f, 0.50f);  // 3.2 px < 12
     ewdx_input_poll();
     CHECK(ewdx_input_buttons() == 0);
@@ -96,31 +101,46 @@ int main(void) {
     push_finger(SDL_FINGERMOTION, 1, 0.30f, 0.40f);
     ewdx_input_poll();
     CHECK(ewdx_input_buttons() == (EWDX_JOY_RIGHT | EWDX_JOY_UP));
+    // far movement on release -> NOT a tap
     push_finger(SDL_FINGERUP, 1, 0.30f, 0.40f);
     ewdx_input_poll();
     CHECK(ewdx_input_buttons() == 0);
 
-    // --- right-half buttons: arrival order ---
+    // --- tap: short, still -> Z latch, consumed by one read ---
+    push_finger(SDL_FINGERDOWN, 2, 0.50f, 0.50f);
+    ewdx_input_poll();
+    CHECK(ewdx_input_buttons() == 0);  // nothing while held
+    push_finger(SDL_FINGERUP, 2, 0.50f, 0.50f);
+    ewdx_input_poll();
+    CHECK(ewdx_input_buttons() == EWDX_JOY_BTN0);  // tap = confirm
+    CHECK(ewdx_input_buttons() == 0);              // consumed
+
+    // --- second finger = cancel (X), while held ---
     push_finger(SDL_FINGERDOWN, 7, 0.80f, 0.70f);
     ewdx_input_poll();
-    CHECK(ewdx_input_buttons() == EWDX_JOY_BTN0);
+    CHECK(ewdx_input_buttons() == 0);              // primary idle, no tap yet
     push_finger(SDL_FINGERDOWN, 9, 0.85f, 0.30f);
     ewdx_input_poll();
-    CHECK(ewdx_input_buttons() == (EWDX_JOY_BTN0 | EWDX_JOY_BTN1));
+    CHECK(ewdx_input_buttons() == EWDX_JOY_BTN1);  // second finger cancels
     push_finger(SDL_FINGERUP, 7, 0.80f, 0.70f);
     ewdx_input_poll();
-    CHECK(ewdx_input_buttons() == EWDX_JOY_BTN1);  // survivor keeps order 1
+    // Primary lift after a <400 ms hold IS a tap (confirm) — by design;
+    // cancel ended because only one finger remains.
+    CHECK(ewdx_input_buttons() == EWDX_JOY_BTN0);
+    // Second finger lifts after a quick hold: never a tap — only the
+    // PRIMARY finger latches Z.
     push_finger(SDL_FINGERUP, 9, 0.85f, 0.30f);
     ewdx_input_poll();
     CHECK(ewdx_input_buttons() == 0);
 
-    // --- key + touch combine ---
+    // --- key + gesture combine ---
     push_key(SDL_KEYDOWN, SDL_SCANCODE_DOWN);
-    push_finger(SDL_FINGERDOWN, 3, 0.75f, 0.60f);
+    push_finger(SDL_FINGERDOWN, 3, 0.40f, 0.60f);
+    push_finger(SDL_FINGERMOTION, 3, 0.40f, 0.30f);  // 96 px up
     ewdx_input_poll();
-    CHECK(ewdx_input_buttons() == (EWDX_JOY_DOWN | EWDX_JOY_BTN0));
+    CHECK(ewdx_input_buttons() == (EWDX_JOY_DOWN | EWDX_JOY_UP));
+    push_finger(SDL_FINGERUP, 3, 0.40f, 0.30f);
     push_key(SDL_KEYUP, SDL_SCANCODE_DOWN);
-    push_finger(SDL_FINGERUP, 3, 0.75f, 0.60f);
     ewdx_input_poll();
     CHECK(ewdx_input_buttons() == 0);
 

@@ -19,7 +19,7 @@
 
 // Bump per shipped build; journaled right after "=== run ===" so every
 // collected log positively identifies the binary that produced it.
-#define EWDX_BUILD_TAG "v11-2026-09-17-bar-scissor"
+#define EWDX_BUILD_TAG "v12-2026-09-17-ui-touch"
 
 #include <stdio.h>
 #include <stdlib.h>
