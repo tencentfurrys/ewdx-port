@@ -75,6 +75,41 @@ exported functions compared; same-size diffs proven to be relocation noise):
 - LESSON: this repo's canonical build source is the latest APK binary, not
   the git history. Before rebuilding, diff the current APK's libmain.so.
 
+## Addendum (v10): EGL surface ground truth — letterbox finally engages
+
+v9 still showed the 640x480 corner. Boot journal explained it: SDL's
+`SDL_GL_GetDrawableSize` returns the REQUESTED window size on Android
+(640x480), not the real surface — so the letterbox math computed "nothing to
+scale". Fix: `ewdx_surface_px()` queries EGL directly (`eglQuerySurface` on
+current display/draw surface), falling back to SDL elsewhere. Journal now
+prints once per geometry:
+
+    viewport: surface 1440x720 game 640x480 -> [240,0 960x720]
+
+(device: Adreno 660, landscape, EGL surface 1440x720 -> centered 960x720
+4:3 game view). Requires linking EGL (android CMake `target_link_libraries`).
+
+## Addendum (v11): bar-only scissor clear — DEVICE-CONFIRMED WORKING
+
+v10 regressed to BLACK SCREEN WITH AUDIO: the journal showed the viewport
+engaged correctly, but the fullscreen black clear in `ewdx_present()` ran
+AFTER the frame flush and wiped the freshly drawn game view every swap
+(v9 never hit it because its letterbox no-op'd skipped the clear).
+
+Fix: clear ONLY the four bar rectangles via `glScissor` (bottom-origin Y
+math), never the game subrect. Device run confirmed: full-screen, centered,
+right-side up, audio + input OK (build tag
+`v11-2026-09-17-bar-scissor`).
+
+## Final state (all shipped in v11 / commits 0f8101d + e3e1b79)
+
+- Fullscreen letterboxed present: EGL surface query -> aspect-locked subrect,
+  bar-only scissor clear, SIZE_CHANGED recompute (rotation).
+- Flip parity with the v7 binary: no software row flip on BMP/PNG uploads.
+- Touch: stick displacement scaled into game px (deadzone stays 12 game px).
+- Build: stb_image_impl.c linked (PNGs-renamed-to-.bmp), EGL linked.
+- Journal evidence chain: build tag, gpu line, viewport line, per-stage boot.
+
 ## Notes / follow-ups
 
 - Aspect mismatch: game is 4:3; on a ~19.5:9 phone there will be black bars

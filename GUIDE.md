@@ -46,9 +46,7 @@ All work below was executed and verified on 2026-09-11/12.
       2026-09-16 runs (v2 build tag): `data/` asset-recurse fix CONFIRMED on
       device (`unpack (590 files)` + `verify OK`), VM + vsave + title green,
       then hang inside `dmmini` — `ewdx_audio_init()` self-deadlocked `au_mtx`
-      (prefills call `ewdx_audio_fill` under the same non-recursive mutex).
-      Fix (v3): init/OpenSL start lock-free + per-step `audio: <step> failed`
-      journal. Timeline: `analysis/crash_2026-09-12_device_run.md`.
+      (prefills call `ewdx_audio_fill` under the same non-recursive mutex).      Fix (v3): init/OpenSL start lock-free + per-step `audio: <step> failed`      journal. Timeline: `analysis/crash_2026-09-12_device_run.md`.      2026-09-17 run (v11, device-confirmed): FULLSCREEN letterboxed present      works — EGL surface query (`eglQuerySurface`; SDL reports the requested      640x480 window size on Android, not the real surface), centered      aspect-locked viewport (surface 1440x720 -> game rect [240,0 960x720]),      bar-only scissor clear in present (a fullscreen clear after the flush      blacked the screen in v10), touch-stick px scaling, and the uncommitted      v7 "flipfix" recovered from the v7 APK binary (no software row flip on      BMP/PNG uploads; repo had reverted to the upside-down state).      Full root-cause chain: `analysis/fix_2026-09-17_fullscreen_viewport.md`.      Commits: 0f8101d (viewport+flipfix) / e3e1b79 (bar-scissor present).
 
 ## 1. Environment (build host)
 
