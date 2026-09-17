@@ -259,20 +259,34 @@ int ewdx_present(void) {
     ewdx_flush();  // step (c): drain quad batcher before swap
     if (ewdx.target != 0) ewdx_select(0);
     // Letterbox bars are NOT cleared by the game (its DGCLEAR only covers the
-    // 640x480 view); paint them black here over the full drawable.
-    {
+    // 640x480 view). Clear ONLY the bar rects: a fullscreen clear here would
+    // erase the frame just flushed into the game-view subrect (the v10
+    // black-screen bug). Scissor rects share the viewport's bottom-origin Y.
+    if (ewdx.viewport[2] > 0 && ewdx.viewport[3] > 0) {
         int dw = 0, dh = 0;
         ewdx_surface_px(&dw, &dh);
-        if (dw > 0 && dh > 0 &&
-            (ewdx.viewport[2] <= 0 || ewdx.viewport[3] <= 0 ||
-             ewdx.viewport[0] > 0 || ewdx.viewport[1] > 0 ||
-             ewdx.viewport[0] + ewdx.viewport[2] < dw ||
-             ewdx.viewport[1] + ewdx.viewport[3] < dh)) {
-            glDisable(GL_SCISSOR_TEST);
-            glViewport(0, 0, dw, dh);
+        int vx = ewdx.viewport[0], vy = ewdx.viewport[1];
+        int vw = ewdx.viewport[2], vh = ewdx.viewport[3];
+        if (vx > 0 || vx + vw < dw || vy > 0 || vy + vh < dh) {
+            glEnable(GL_SCISSOR_TEST);
             glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-            glClear(GL_COLOR_BUFFER_BIT);
-            ewdx_apply_viewport();  // back to the game-view subrect
+            if (vx > 0) {       // left bar
+                glScissor(0, 0, vx, dh);
+                glClear(GL_COLOR_BUFFER_BIT);
+            }
+            if (vx + vw < dw) { // right bar
+                glScissor(vx + vw, 0, dw - vx - vw, dh);
+                glClear(GL_COLOR_BUFFER_BIT);
+            }
+            if (vy > 0) {       // bottom bar (GL origin)
+                glScissor(0, 0, dw, vy);
+                glClear(GL_COLOR_BUFFER_BIT);
+            }
+            if (vy + vh < dh) { // top bar
+                glScissor(0, vy + vh, dw, dh - vy - vh);
+                glClear(GL_COLOR_BUFFER_BIT);
+            }
+            glDisable(GL_SCISSOR_TEST);
         }
     }
     SDL_GL_SwapWindow(ewdx.win);
