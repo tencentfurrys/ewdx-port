@@ -237,6 +237,14 @@ static int ex_cmdfunc(int cmd) {
             down = (mask & EWDX_JOY_BTN0) != 0; break;
         case 88:  // X (VK_X)
             down = (mask & EWDX_JOY_BTN1) != 0; break;
+        case 67:  // C
+            down = (mask & EWDX_JOY_BTN2) != 0; break;
+        case 65:  // A
+            down = (mask & EWDX_JOY_BTN3) != 0; break;
+        case 83:  // S
+            down = (mask & EWDX_JOY_BTN4) != 0; break;
+        case 68:  // D
+            down = (mask & EWDX_JOY_BTN5) != 0; break;
         default: down = 0; break;
         }
         code_setva(pv, ap, HSPVAR_FLAG_INT, &down);
@@ -306,7 +314,11 @@ static void *ex_reffunc(int *type_res, int arg) {
             if (SDL_GetDesktopDisplayMode(0, &dm) == 0 && dm.h > 0) v = dm.h;
             break;
         }
-        case 2: v = 1; break;   // active window id
+        case 2: v = ewdx_input_focus() ? 0 : -1;  // active window id: the
+                                // game IS window 0 on Android; HSP semantics
+                                // are 0 when focused / -1 when not. A nonzero
+                                // here made *label_198 skip ALL input reads
+                                // (menus frozen since forever).
         case 3: v = 0; break;   // current window
         default: v = 0; break;
         }

@@ -106,16 +106,21 @@ int main(void) {
     ewdx_input_poll();
     CHECK(ewdx_input_buttons() == 0);
 
-    // --- tap: short, still -> Z latch, consumed by one read ---
+    // --- tap: short, still -> Z asserted like a key press ---
     push_finger(SDL_FINGERDOWN, 2, 0.50f, 0.50f);
     ewdx_input_poll();
     CHECK(ewdx_input_buttons() == 0);  // nothing while held
     push_finger(SDL_FINGERUP, 2, 0.50f, 0.50f);
     ewdx_input_poll();
-    CHECK(ewdx_input_buttons() == EWDX_JOY_BTN0);  // tap = confirm
-    CHECK(ewdx_input_buttons() == 0);              // consumed
+    // Visible to EVERY reader within the hold window (the script samples
+    // DIGETJOYSTATE, getkey Z and getkey2 edges in the same frame; a
+    // consume-once latch starves all but the first reader).
+    CHECK(ewdx_input_buttons() == EWDX_JOY_BTN0);
+    CHECK(ewdx_input_buttons() == EWDX_JOY_BTN0);  // still asserted
+    CHECK(ewdx_input_buttons() == EWDX_JOY_BTN0);  // still asserted
 
     // --- second finger = cancel (X), while held ---
+    SDL_Delay(EWDX_TAP_HOLD_MS + 5);  // let the tap press expire first
     push_finger(SDL_FINGERDOWN, 7, 0.80f, 0.70f);
     ewdx_input_poll();
     CHECK(ewdx_input_buttons() == 0);              // primary idle, no tap yet
@@ -127,8 +132,9 @@ int main(void) {
     // Primary lift after a <400 ms hold IS a tap (confirm) — by design;
     // cancel ended because only one finger remains.
     CHECK(ewdx_input_buttons() == EWDX_JOY_BTN0);
-    // Second finger lifts after a quick hold: never a tap — only the
-    // PRIMARY finger latches Z.
+    // Let the tap press expire, then the second finger lifts: never a tap —
+    // only the PRIMARY finger asserts Z.
+    SDL_Delay(EWDX_TAP_HOLD_MS + 5);
     push_finger(SDL_FINGERUP, 9, 0.85f, 0.30f);
     ewdx_input_poll();
     CHECK(ewdx_input_buttons() == 0);
@@ -144,8 +150,8 @@ int main(void) {
     ewdx_input_poll();
     CHECK(ewdx_input_buttons() == 0);
 
-    // --- idempotent poll with empty queue ---
-    ewdx_input_poll();
+    // --- tap expiry: the press auto-releases after the hold window ---
+    SDL_Delay(EWDX_TAP_HOLD_MS + 5);
     CHECK(ewdx_input_buttons() == 0);
 
     SDL_Quit();

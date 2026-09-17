@@ -28,6 +28,10 @@
 #ifndef __EWDX_INPUT_H
 #define __EWDX_INPUT_H
 
+// How long a tap stays asserted in the mask (a real key-press duration).
+// Exposed so tests and UI tuning share the value.
+#define EWDX_TAP_HOLD_MS 180
+
 #define EWDX_JOY_UP 0x001
 #define EWDX_JOY_DOWN 0x002
 #define EWDX_JOY_LEFT 0x004
@@ -41,5 +45,6 @@
 
 int ewdx_input_poll(void);     // drain SDL events, refresh state (-1 ok)
 int ewdx_input_buttons(void);  // current 10-bit joyg mask
+int ewdx_input_focus(void);    // 1 = window focused (ginfo(2) maps 0/-1)
 
 #endif

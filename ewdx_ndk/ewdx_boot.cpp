@@ -19,7 +19,7 @@
 
 // Bump per shipped build; journaled right after "=== run ===" so every
 // collected log positively identifies the binary that produced it.
-#define EWDX_BUILD_TAG "v12-2026-09-17-ui-touch"
+#define EWDX_BUILD_TAG "v13-2026-09-17-tap-hold-fix"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -814,9 +814,11 @@ static void boot_mirror_push(const char *msg) {
 }
 
 #ifdef __ANDROID__
-static jobject boot_mediastore_uri(JNIEnv *env, jobject resolver) {
-    // Find existing Downloads/ewdx-boot.log or insert it. Returns local ref
+static jobject boot_mediastore_uri(JNIEnv *env, jobject resolver, const char *name) {
+    // Find existing Downloads/<name> or insert it. Returns local ref
     // Uri or NULL. Every failure path clears the exception and bails.
+    // `name` is passed in so a conflicting/stale row under the canonical
+    // name can be sidestepped with a fresh per-run file name.
     jclass uriCls = env->FindClass("android/net/Uri");
     jmethodID parseMid;
     jstring filesStr, nameStr, mimeStr, relStr, displayKey, mimeKey, relKey;
@@ -846,7 +848,7 @@ static jobject boot_mediastore_uri(JNIEnv *env, jobject resolver) {
             jstring selStr = env->NewStringUTF("_display_name=? AND relative_path=?");
             jstring relVal = env->NewStringUTF("Download/");
             env->SetObjectArrayElement(cols, 0, idStr);
-            env->SetObjectArrayElement(args, 0, nameStr = env->NewStringUTF(EWDX_MIRROR_NAME));
+            env->SetObjectArrayElement(args, 0, nameStr = env->NewStringUTF(name));
             env->SetObjectArrayElement(args, 1, relVal);
             cursor = env->CallObjectMethod(resolver, queryMid, filesUri, cols, selStr, args, NULL);
             env->DeleteLocalRef(idStr); env->DeleteLocalRef(selStr);
@@ -898,7 +900,7 @@ static jobject boot_mediastore_uri(JNIEnv *env, jobject resolver) {
         displayKey = env->NewStringUTF("_display_name");
         mimeKey = env->NewStringUTF("mime_type");
         relKey = env->NewStringUTF("relative_path");
-        nameStr = env->NewStringUTF(EWDX_MIRROR_NAME);
+        nameStr = env->NewStringUTF(name);
         mimeStr = env->NewStringUTF("text/plain");
         relStr = env->NewStringUTF("Download/");
         if (cvCls && cvNew && putMid && !env->ExceptionCheck()) {
@@ -929,22 +931,33 @@ static jobject boot_mediastore_uri(JNIEnv *env, jobject resolver) {
     return uri;
 }
 
-static void boot_mirror_mediastore(JNIEnv *env) {
+static int boot_mirror_mediastore(JNIEnv *env) {
+    // Returns 1 if the mirror content was (re)written, 0 on any failure.
     jobject act = (jobject)SDL_AndroidGetActivity();
     jclass actCls;
     jmethodID resMid;
     jobject resolver = NULL;
     jobject uri = NULL;
-    if (act == NULL || env->ExceptionCheck()) { env->ExceptionClear(); return; }
+    int ok = 0;
+    if (act == NULL || env->ExceptionCheck()) { env->ExceptionClear(); return 0; }
     actCls = env->GetObjectClass(act);
-    if (actCls == NULL || env->ExceptionCheck()) { env->ExceptionClear(); return; }
+    if (actCls == NULL || env->ExceptionCheck()) { env->ExceptionClear(); return 0; }
     resMid = env->GetMethodID(actCls, "getContentResolver", "()Landroid/content/ContentResolver;");
     if (resMid != NULL && !env->ExceptionCheck())
         resolver = env->CallObjectMethod(act, resMid);
     if (resolver == NULL || env->ExceptionCheck()) {
-        env->ExceptionClear(); env->DeleteLocalRef(actCls); return;
+        env->ExceptionClear(); env->DeleteLocalRef(actCls); return 0;
     }
-    uri = boot_mediastore_uri(env, resolver);
+    // Canonical name first; if MediaProvider refuses (stale row owned by
+    // another install — DatabaseUtils "failed to build unique file"), fall
+    // back to a fresh per-run name so the mirror still lands.
+    uri = boot_mediastore_uri(env, resolver, EWDX_MIRROR_NAME);
+    if (uri == NULL) {
+        char alt[64];
+        snprintf(alt, sizeof(alt), "ewdx-boot-%u.log",
+                 (unsigned)(SDL_GetTicks() / 1000u));
+        uri = boot_mediastore_uri(env, resolver, alt);
+    }
     if (uri != NULL) {
         jclass resCls = env->GetObjectClass(resolver);
         jmethodID ofdMid = env->GetMethodID(resCls, "openFileDescriptor",
@@ -961,7 +974,8 @@ static void boot_mirror_mediastore(JNIEnv *env) {
                     int fd = env->CallIntMethod(pfd, detMid);
                     if (!env->ExceptionCheck() && fd >= 0 && g_mirror_len > 0) {
                         ftruncate(fd, 0);
-                        (void)write(fd, g_mirror, g_mirror_len);
+                        if (write(fd, g_mirror, g_mirror_len) == (ssize_t)g_mirror_len)
+                            ok = 1;
                         close(fd);
                     }
                 } else {
@@ -983,6 +997,7 @@ static void boot_mirror_mediastore(JNIEnv *env) {
     env->DeleteLocalRef(resolver);
     env->DeleteLocalRef(actCls);
     // act is SDL-owned: never deleted.
+    return ok;
 }
 
 static int g_perm_asked = 0;
@@ -1068,15 +1083,26 @@ static void boot_mirror_legacy(JNIEnv *env) {
 
 static void boot_mirror_flush(void) {
     JNIEnv *env;
+    static unsigned fails = 0, last_try = 0;
+    unsigned now;
+    int ok = 1;
     if (g_mirror_len == 0) return;
+    // Backoff: if MediaStore keeps refusing (stale-name conflicts etc.),
+    // stop hammering it every journal line — retry at most every 30 s.
+    // filesDir logging (the authoritative journal) is unaffected.
+    now = SDL_GetTicks();
+    if (fails >= 3 && now - last_try < 30000u) return;
+    last_try = now;
     env = (JNIEnv *)SDL_AndroidGetJNIEnv();
     if (env == NULL) return;
     if (env->ExceptionCheck()) env->ExceptionClear();
     if (android_get_device_api_level() >= 29)
-        boot_mirror_mediastore(env);
+        ok = boot_mirror_mediastore(env);
     else
         boot_mirror_legacy(env);
     if (env->ExceptionCheck()) env->ExceptionClear();
+    if (ok) fails = 0;
+    else if (fails < 1000) fails++;
 }
 #else
 static void boot_mirror_flush(void) {}

@@ -7,9 +7,12 @@
 // would be useless — gestures are the direct equivalent:
 //   primary finger drag ...... direction bits while held (deadzone in game
 //                              px, scaled to the real EGL surface)
-//   primary finger tap ....... confirm (Z) latched on release, if the finger
-//                              stayed within EWDX_TAP_PX for < EWDX_TAP_MS;
-//                              consumed by the first buttons() read
+//   primary finger tap ....... confirm (Z) asserted for EWDX_TAP_HOLD_MS
+//                              after release — like a real keyboard press, so
+//                              EVERY read site sees it (the script samples
+//                              joyg, getkey Z and getkey2 Z-edges within the
+//                              same frame; a consume-once latch starves all
+//                              but the first reader and freezes menus)
 //   second finger (anywhere) . cancel (X) while held
 //   further fingers .......... ignored
 // Keyboard (arrows/Z/X/C/A/S/D), gamepad and gestures all OR into the same
@@ -39,9 +42,10 @@ typedef struct {
 static EwdxFinger fingers[EWDX_MAX_FINGERS];
 static int key_mask = 0;     // keyboard-contributed bits
 static int pad_mask = 0;     // gamepad-contributed bits
-static int tap_btn = 0;      // latched confirm from the last tap
-static unsigned tap_ms = 0;  // when the tap was latched
+static int tap_btn = 0;      // bits currently asserted by a tap
+static unsigned tap_t0 = 0;  // when the tap was latched (expiry = release)
 static SDL_GameController *pad = NULL;
+static int focus = 1;       // app window focused (ginfo(2): 0 / -1)
 
 static int count_fingers(void) {
     int i, n = 0;
@@ -115,8 +119,12 @@ static void finger_up(SDL_FingerID id) {
                 primary_drag_px(&dx, &dy);  // finger still marked used
                 if (dx * dx + dy * dy < EWDX_TAP_PX * EWDX_TAP_PX &&
                     held < EWDX_TAP_MS) {
+                    // Assert like a physical key press: stays in the mask
+                    // for EWDX_TAP_HOLD_MS so every reader this frame (and
+                    // the next few) sees it — menus poll joyg AND getkey
+                    // edges in the same loop.
                     tap_btn = EWDX_JOY_BTN0;
-                    tap_ms = SDL_GetTicks();
+                    tap_t0 = SDL_GetTicks();
                 }
             }
             fingers[i].used = 0;
@@ -212,6 +220,10 @@ int ewdx_input_poll(void) {
         case SDL_WINDOWEVENT:
             if (ev.window.event == SDL_WINDOWEVENT_SIZE_CHANGED)
                 ewdx_apply_screen_viewport();  // re-fit letterbox (rotation)
+            else if (ev.window.event == SDL_WINDOWEVENT_FOCUS_GAINED)
+                focus = 1;
+            else if (ev.window.event == SDL_WINDOWEVENT_FOCUS_LOST)
+                focus = 0;
             break;
         default:
             break;
@@ -221,14 +233,19 @@ int ewdx_input_poll(void) {
     return -1;
 }
 
+int ewdx_input_focus(void) {
+    return focus;
+}
+
 int ewdx_input_buttons(void) {
-    int m = key_mask | pad_mask;
+    int m;
     float dx, dy;
-    // Tap latch: expires unread after 2 s (never leaves a stuck button),
-    // otherwise consumed by the first read so menus see exactly one frame.
-    if (tap_btn != 0 && SDL_GetTicks() - tap_ms > 2000) tap_btn = 0;
-    m |= tap_btn;
-    tap_btn = 0;
+    // Tap acts as a short physical press: asserted for EWDX_TAP_HOLD_MS,
+    // then released — no consume-once clearing, so no reader can starve
+    // another (label_198 reads DIGETJOYSTATE, getkey Z and getkey2 edges
+    // from the same mask within one script frame).
+    if (tap_btn != 0 && SDL_GetTicks() - tap_t0 > EWDX_TAP_HOLD_MS) tap_btn = 0;
+    m = key_mask | pad_mask | tap_btn;
     primary_drag_px(&dx, &dy);
     if (dx < -EWDX_DEADZONE_PX) m |= EWDX_JOY_LEFT;
     if (dx > EWDX_DEADZONE_PX) m |= EWDX_JOY_RIGHT;
@@ -242,4 +259,5 @@ int ewdx_input_buttons(void) {
 //   label_198: DIGETJOYNUM!=0 -> DIGETJOYSTATE fills joyg (we return 1)
 //   #deffunc joystick: bits0-3 = arrows, bits4+ = Z/X/C/A/S/D via joy() map
 //   L27300 menus: joyg==0 idle / joyg==pow2(cnt+4) single-button advance
-//   title/start/config: same bitmask scheme -> tap=Z walks them all
+//   getkey/getkey2 wrap the SAME mask (ewdx_extcmd), so a tap must be
+//   visible to all of them -> held-key tap, never a consume-once latch

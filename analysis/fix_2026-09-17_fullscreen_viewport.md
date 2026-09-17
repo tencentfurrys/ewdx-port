@@ -118,3 +118,69 @@ right-side up, audio + input OK (build tag
   `ewdx_apply_screen_viewport()` if a "fill screen" mode is ever wanted.
 - EXCMD_REDRAW (`ewdx_extcmd.cpp`) swaps without the bar-clear; it is
   boot-time only in this script, so left as-is.
+
+---
+
+# Session 2 (2026-09-17, later): UI touch + the two freeze bugs (v12–v13)
+
+## What shipped in v12 (commit 8017f02)
+
+Full-screen gesture touch, no on-screen buttons:
+- primary finger drag -> arrows (bits0-3), deadzone in game px via the
+  letterbox viewport
+- primary finger tap -> Z (confirm) latch, one-read consumption
+- second finger -> X (cancel) while held
+- host test rewritten to the gesture model (23 checks green)
+
+## Device-side findings (v12 on hardware, via adb)
+
+1. Menus were FROZEN: taps reached the input layer (`joyg=0x010` visible in
+   the journal) but the script never advanced. Root cause chain:
+   - `*label_198` (the script's input refresh) starts with
+     `if ( ginfo(2) != 0 ) { return }`.
+   - Our `ginfo(2)` shim hardcoded `1` -> input was NEVER read -> menus
+     dead since the first build. Fixed: real HSP semantics — active-window
+     id 0 when focused, -1 when backgrounded (`ewdx_input_focus()`).
+   - A consume-once tap latch also starved readers: `label_198` reads
+     DIGETJOYSTATE, then `getkey Z`, then `getkey2` Z-edges from the SAME
+     mask in one frame; whoever read first ate the tap. Fixed: a tap now
+     behaves like a ~180 ms physical key press (asserted for
+     `EWDX_TAP_HOLD_MS`, then auto-released) so every reader sees it.
+   - `getkey` only mapped arrows/Z/X; C/A/S/D (VK 67/65/83/68) now map to
+     bits 6..9 too.
+2. Boot-log mirror to Downloads always failed on Android 15
+   (DatabaseUtils "failed to build unique file" — stale row conflict).
+   Fixed: fall back to a fresh per-run file name when the canonical name is
+   refused, plus 30 s backoff after repeated failures (logcat no longer
+   spammed every journal line).
+3. Verified live on device (Tcl 5033D, 960x540, via adb): after the ginfo(2)
+   fix the menus NAVIGATED by tap: title -> STAGE SELECT -> difficulty ->
+   stage transition ("GAME START" works).
+
+## Where v13 stopped: #Error 7 (ARRAY_OVERFLOW) at stage load
+
+- Full flow into the stage now works; the crash-report dialog
+  ("previous run stopped at") was also dismissed live via adb tap.
+- Stage load throws `#Error 7` (HSPERR_ARRAY_OVERFLOW) AFTER
+  `_dmmload/_dmmvol/_dmmpan/_dmmplay` resolve (BGM loads fine).
+- Prime suspect: `seplay` (start_ax_dump.hsp L3845..3860) writes
+  `sound(cnt + 1)` when inserting a new SE into the last slot — one past
+  the end of `sound()`. Real HSP3.5 auto-expands the array; if the pinned
+  OpenHSP core throws instead, that is exactly error 7. Next step: check
+  `HspVarCoreArray` / the variable-write path for expansion parity, or
+  add a write-hook that grows 1-D arrays like HSP3.5 does.
+- DS backslash patch verified: 13 `data\...` separators are rewritten on
+  first boot (idempotent; fresh install logs `staged start.ax (... 13
+  separators)`).
+
+## Diagnostics used (for future sessions)
+
+- OCR of adb screencaps (Windows Media OCR via PowerShell) to read the
+  actual game screen.
+- `uiautomator dump` to find SDL dialog buttons (OK at [453,348][509,414]
+  on 960x540) and dismiss the 10 s crash-report via `input tap`.
+- `input swipe x1 y x2 y 8000` + heartbeat joyg sampling to prove touch
+  reaches the game on device.
+- `adb install -r` while the game runs always leaves a non-clean journal
+  tail -> the crash-report dialog blocks the next boot 10 s; uninstall/
+  reinstall avoids it during testing.
