@@ -19,7 +19,7 @@
 
 // Bump per shipped build; journaled right after "=== run ===" so every
 // collected log positively identifies the binary that produced it.
-#define EWDX_BUILD_TAG "v13-2026-09-17-tap-hold-fix"
+#define EWDX_BUILD_TAG "v16-2026-09-18-str-payload-span"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -743,6 +743,17 @@ int ewdx_boot_exec(void) {
         }
         EWDX_LOGE("boot: %s", errmsg);
         ewdx_boot_journal(errmsg);
+        if ((int)err == 7) {
+            // ERR7 forensics: the vendored VM writes var/shape/idx into
+            // refstr right before throwing; surface it in the journal.
+            HSPCTX *errctx = code_getctx();
+            if (errctx != NULL && errctx->refstr != NULL &&
+                errctx->refstr[0] != '\0') {
+                char err7[2048];
+                snprintf(err7, sizeof(err7), "%s | %s", errmsg, errctx->refstr);
+                ewdx_boot_journal(err7);
+            }
+        }
         if (ewdx.win != NULL) {
             SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "EchidnaWarsDX",
                                      errmsg, ewdx.win);

@@ -33,12 +33,16 @@ add_subdirectory("../../../../../../SDL_ttf" SDL_ttf_build)
 # (-include) because OpenHSP's own supio.h is empty without a platform macro.
 set(OPENHSP_HSP3_DIR "../../../../../../OpenHSP/src/hsp3")
 set(EWDX_DIR "../../../../../ewdx_ndk")
+# hsp3code.cpp + hspvar_core.cpp are VENDORED in ewdx_ndk/vm/ (v15 err7
+# forensics): identical to the OpenHSP 3dbb872 pin plus a journal hook at
+# every array-overflow throw (ewdx_vm_overflow_journal). Re-sync by copying
+# the pinned file and re-applying the "ewdx:" marked blocks.
 add_library(hsp3core STATIC
     "${OPENHSP_HSP3_DIR}/hsp3.cpp"
-    "${OPENHSP_HSP3_DIR}/hsp3code.cpp"
+    "${EWDX_DIR}/vm/hsp3code.cpp"
     "${OPENHSP_HSP3_DIR}/hsp3debug.cpp"
     "${OPENHSP_HSP3_DIR}/hsp3int.cpp"
-    "${OPENHSP_HSP3_DIR}/hspvar_core.cpp"
+    "${EWDX_DIR}/vm/hspvar_core.cpp"
     "${OPENHSP_HSP3_DIR}/hspvar_int.cpp"
     "${OPENHSP_HSP3_DIR}/hspvar_str.cpp"
     "${OPENHSP_HSP3_DIR}/hspvar_double.cpp"

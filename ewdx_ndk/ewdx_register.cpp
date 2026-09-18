@@ -364,7 +364,7 @@ static int rc_vload_restore(PVal *pv, int varid) {
     char *name;
     const EwdxHspvEntry *e;
     const uint8_t *payload;
-    int flag, i, nelem;
+    int flag, i;
     if (pv == NULL || varid < 0) return -1;
     name = code_getdebug_varname(varid);
     if (name == NULL || name[0] == '\0') return -1;
@@ -381,67 +381,86 @@ static int rc_vload_restore(PVal *pv, int varid) {
         EWDX_LOGW("vload: '%s' type %d unsupported (keeps live)", name, flag);
         return 0;
     }
-    // Element count from the stored lens (len[1..4] product, 1-D usually).
-    nelem = 1;
-    for (i = 1; i <= 4; i++) {
-        uint32_t l = e->master.len[i];
-        if (l == 0) l = 1;
-        // len[1] is the real count; higher dims are 1 in save files.
-        if (i == 1) nelem = (int)l;
-    }
-    if (nelem <= 0) nelem = 1;
-    if (flag == HSPVAR_FLAG_INT || flag == HSPVAR_FLAG_DOUBLE) {
-        int esz = (flag == HSPVAR_FLAG_INT) ? 4 : 8;
-        uint32_t want = (uint32_t)(nelem * esz);
-        // Resize to the stored shape, then memcpy the raw storage.
-        if ((uint32_t)e->master.size < want) return -1;
-        {
-            int l1 = (int)e->master.len[1];
-            int l2 = (int)e->master.len[2];
-            int l3 = (int)e->master.len[3];
-            int l4 = (int)e->master.len[4];
-            if (l1 <= 0) l1 = nelem;
-            if (l2 <= 0) l2 = 1;
-            if (l3 <= 0) l3 = 1;
-            if (l4 <= 0) l4 = 1;
-            HspVarCoreClear(pv, flag);
-            HspVarCoreDim(pv, flag, l1, l2, l3, l4);
+    // Hspda.cpp varload_getvar parity: struct-copy the MASTER PVal (true
+    // dims incl. zero trailing lens + support bits), realloc, copy payload.
+    // The old shim rebuilt 1-D Dim(v,flag,len1,1,1,1), which flattened
+    // multi-dim shapes (m_obj 17x3, t_part 24x59x77, ...) -> truncated INT
+    // payloads and OOB STR row reads (Error 7 at stage load).
+    {
+        PVal master;
+        memset(&master, 0, sizeof(master));
+        master.flag = (short)flag;
+        master.mode = (short)e->master.mode;
+        master.len[0] = 1;
+        master.len[1] = e->master.len[1];
+        master.len[2] = e->master.len[2];
+        master.len[3] = e->master.len[3];
+        master.len[4] = e->master.len[4];
+        master.size = (int)e->master.size;
+        master.support = e->master.support;
+        EWDX_LOGW("vload: '%s' flag=%d len=[%u,%u,%u,%u] size=%u sup=%#x",
+                  name, flag, master.len[1], master.len[2], master.len[3],
+                  master.len[4], master.size, master.support);
+        // File-end bound for payload walks (truncated file guard).
+        const uint8_t *fend = rc_vload.img + rc_vload.len;
+        if (payload + e->master.size > fend) return -1;
+        if (flag == HSPVAR_FLAG_STR) {
+            // STR blocks: master.size is the POINTER-TABLE size (elems*4),
+            // NOT the payload bytes; the payload is `size/4` self-describing
+            // blocks [u32 FX][u32 len][bytes]. v15 bounded the walk by
+            // master.size and read the NEXT entry's data -> tag mismatch ->
+            // the var was left re-dimmed to a bogus shape (device ERR7
+            // core:range on m_dio0_w, v15 logs). So: validate the whole walk
+            // against the file end FIRST, then dim to the master's true dims
+            // (zeros preserved; strict-path reads need the exact shape, e.g.
+            // m_dio0_w [1,64]) and only then fill.
+            uint32_t blocks = master.size / 4u;
+            const uint8_t *p = payload;
+            const uint8_t *q;
+            uint32_t k, tag, bsz;
+            for (k = 0, q = p; k < blocks; k++) {
+                if (q + 8 > fend) return -1;
+                memcpy(&tag, q, 4);
+                if (tag != EWDX_HSPV_FX) return -1;
+                memcpy(&bsz, q + 4, 4);
+                q += 8 + bsz;
+                if (q > fend) return -1;
+            }
+            HspVarCoreClear(pv, HSPVAR_FLAG_STR);
+            HspVarCoreDim(pv, HSPVAR_FLAG_STR,
+                          (int)master.len[1], (int)master.len[2],
+                          (int)master.len[3], (int)master.len[4]);
+            for (k = 0, q = p; k < blocks; k++) {
+                memcpy(&bsz, q + 4, 4);
+                q += 8;
+                char *tmp = (char *)malloc((size_t)bsz + 1u);
+                if (tmp == NULL) return -1;
+                memcpy(tmp, q, bsz);
+                tmp[bsz] = '\0';
+                code_setva(pv, (APTR)k, HSPVAR_FLAG_STR, tmp);
+                free(tmp);
+                q += bsz;
+            }
+            return 0;
         }
+        // INT/DOUBLE: fixed storage. Keep dims verbatim (0s stay 0s so the
+        // VM's FLEXARRAY auto-expand keeps working on later writes), then
+        // memcpy the whole stored payload.
         {
+            int esz = (flag == HSPVAR_FLAG_INT) ? 4 : 8;
+            uint32_t want = (uint32_t)(esz * (int)HspVarCoreCountElems(&master));
+            if ((uint32_t)e->master.size < want) return -1;
+            HspVarCoreClear(pv, flag);
+            HspVarCoreDim(pv, flag,
+                          (int)master.len[1], (int)master.len[2],
+                          (int)master.len[3], (int)master.len[4]);
             void *dst = HspVarCorePtrAPTR(pv, 0);
             int cap = 0;
             HspVarCoreGetBlockSize(pv, (PDAT *)dst, &cap);
             if (cap < (int)want || dst == NULL) return -1;
             memcpy(dst, payload, want);
+            return 0;
         }
-        return 0;
-    }
-    // STR: payload is nelem x [u32 FX][u32 size][bytes].
-    {
-        const uint8_t *p = payload;
-        const uint8_t *end = payload + e->master.size;
-        HspVarCoreClear(pv, HSPVAR_FLAG_STR);
-        HspVarCoreDim(pv, HSPVAR_FLAG_STR, nelem, 1, 1, 1);
-        for (i = 0; i < nelem; i++) {
-            uint32_t tag, sz;
-            if (p + 8 > end) return -1;
-            memcpy(&tag, p, 4);
-            memcpy(&sz, p + 4, 4);
-            p += 8;
-            if (tag != EWDX_HSPV_FX) return -1;
-            if (p + sz > end) return -1;
-            {
-                // code_setva copies the string (NUL-terminated slice).
-                char *tmp = (char *)malloc((size_t)sz + 1u);
-                if (tmp == NULL) return -1;
-                memcpy(tmp, p, sz);
-                tmp[sz] = '\0';
-                code_setva(pv, (APTR)i, HSPVAR_FLAG_STR, tmp);
-                free(tmp);
-            }
-            p += sz;
-        }
-        return 0;
     }
 }
 
