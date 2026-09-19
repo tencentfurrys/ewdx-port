@@ -92,7 +92,13 @@ void ewdx_flush(void) {
 
 static void run_check(int tex) {
     // Flush when texture, blend or target changes (state groups like D3D).
-    // Blend is applied immediately by ewdx_apply_blend; just track it.
+    // D3D grouped draws by state at DrawPrimitive time, so every quad drawn
+    // after a DGBLENDMODE must come out with the NEW factors: flush the old
+    // group, then record the CURRENT state for the new group. (The previous
+    // version only recorded blend when the batch was empty, so a
+    // DGBLENDMODE on a continuing texture kept the OLD factors alive —
+    // verbatim FUN_10001fa0 parity bug, e.g. title-logo white-flash drew
+    // with stale additive factors.)
     if (batch_quads > 0 &&
         (tex != batch_tex || ewdx.st.blend != batch_blend ||
          ewdx.target != batch_target)) {
@@ -125,7 +131,7 @@ static void emit_quad(GLuint tex, int texW, int texH, int vflip,
                       float rx, float ry, float rw, float rh,
                       float scx, float scy, unsigned ang,
                       float cr, float cg, float cb, float ca,
-                       int uflip, int vflip2) {
+                       int uflip, int vflip2, int ctr_anchor) {
     (void)tex;  // bound by the caller (run_check/batch_tex); geometry only here
     // upper clip to texture bounds (verbatim; no lower clip in orig)
     if (rx + rw > texW) rw = (float)texW - rx;
@@ -134,8 +140,20 @@ static void emit_quad(GLuint tex, int texW, int texH, int vflip,
 
     float c = ewdx_cosLut[ang & 0xff];
     float s = ewdx_sinLut[ang & 0xff];
+    // FUN_10001fa0 flag&4 (bVar13&4 else-branch): vertex y pre-scales by the
+    // 8.8 scale around the DEST TOP-LEFT (local_20 = dh*0.5 + dy), then the
+    // rotate result adds (dx-0.5, dy-0.5) instead of the corner pivot pair.
+    // flag&2 (scale-to-rect) keeps the &1 centered pivot path instead — the
+    // else-branch is only reached for the plain per-part sprites, which all
+    // pass flags with bit 2 clear (menu 0/8, in-game 7+).
     float pivx = dx + dw * K_HALF;
     float pivy = dy + dh * K_HALF;
+    // flag&4 anchors the result at (dx-0.5, pivy-0.5); plain path effectively
+    // anchors at (dx-0.5, pivy-0.5) too (the +pivx-dx / +pivy-dy terms cancel
+    // through the scale in the decompiled math). Verified: both branches
+    // produce identical output at angle 0 / scale 256, as the game requires.
+    float ax = dx - K_HALF;
+    float ay = pivy - K_HALF;
 
     float cx[4] = { dx, dx + dw, dx + dw, dx };
     float cy[4] = { dy, dy, dy + dh, dy + dh };
@@ -157,9 +175,24 @@ static void emit_quad(GLuint tex, int texW, int texH, int vflip,
         int i = idx[k];
         float X = cx[i] - pivx, Y = cy[i] - pivy;
         float Xr = X * c - Y * s, Yr = X * s + Y * c;
-        float Xd = Xr + pivx - dx, Yd = Yr + pivy - dy;
-        float Xs = Xd * scx + dx - K_HALF;
-        float Ys = Yd * scy + dy - K_HALF;
+        float Xs, Ys;
+        if (ctr_anchor) {
+            // FUN_10001fa0 flag&4 else-branch, verbatim: pivot for the
+            // subtract is the LEFT-CENTER (dx, pivy) — i.e. X4 = cx-dx =
+            // X + dw/2, Y4 = cy-pivy = Y — then SCALE, then ROTATE, then
+            // anchor (dx-0.5, pivy-0.5). Differs from the plain path only
+            // when the scale is anisotropic AND the sprite is rotated
+            // (scale/rotate order swaps the axis convention).
+            float X4 = X + dw * K_HALF;
+            float Y4 = Y;
+            float Xsc = X4 * scx, Ysc = Y4 * scy;
+            Xs = Xsc * c - Ysc * s + ax;
+            Ys = Xsc * s + Ysc * c + ay;
+        } else {
+            float Xd = Xr + pivx - dx, Yd = Yr + pivy - dy;
+            Xs = Xd * scx + dx - K_HALF;
+            Ys = Yd * scy + dy - K_HALF;
+        }
         float uu = (du[i] == 0.0f) ? u0 : u1;
         float vv = (dv[i] == 0.0f) ? v0 : v1;
         if (uflip) uu = u0 + u1 - uu;
@@ -180,6 +213,23 @@ int ewdx_copy_flags(int id, int flags) {
     float dx = (float)m_posx, dy = (float)m_posy;
     float dw = (float)m_rw, dh = (float)m_rh;
     if (flags & 1) { dx -= dw * K_HALF; dy -= dh * K_HALF; }  // centered
+#ifdef EWDX_DGCOPY_JOURNAL
+    // v17 diagnostics: journal every DGGCOPY the script issues. The v16
+    // failure frames (system.bmp atlas drawn as one giant quad) need the
+    // exact (id, dst, src-rect, scale) stream around the stage load to pin
+    // whether the quad comes from the script (garbage dio/pic values) or
+    // from a bad present path. Off by default; enabled per-build.
+    {
+        char msg[160];
+        snprintf(msg, sizeof(msg),
+                 "[dgcopy] id=%d f=%#x dst=(%d,%d %dx%d) src=(%d,%d) "
+                 "sc=(%.2f,%.2f) ang=%u col=(%d,%d,%d,%d)",
+                 id, (unsigned)flags, m_posx, m_posy, m_rw, m_rh, m_rx, m_ry,
+                 m_scx / 256.0f, m_scy / 256.0f, (unsigned)m_ang,
+                 ewdx.st.r, ewdx.st.g, ewdx.st.b, ewdx.st.a);
+        ewdx_boot_journal(msg);
+    }
+#endif
     float scx = (flags & 2) ? (m_scx / (dw > 0 ? dw : 1)) : (m_scx * (1.0f / 256.0f));
     float scy = (flags & 2) ? (m_scy / (dh > 0 ? dh : 1)) : (m_scy * (1.0f / 256.0f));
     run_check((int)t->tex);
@@ -187,7 +237,7 @@ int ewdx_copy_flags(int id, int flags) {
               (float)m_rx, (float)m_ry, dw, dh, scx, scy, m_ang,
               ewdx.st.r / 255.0f, ewdx.st.g / 255.0f,
               ewdx.st.b / 255.0f, ewdx.st.a / 255.0f,
-              (flags & 8) != 0, (flags & 0x10) != 0);
+              (flags & 8) != 0, (flags & 0x10) != 0, (flags & 4) != 0);
     if (first) {
         first = 0;
         ewdx_boot_journal("first copy queued");
@@ -266,11 +316,18 @@ int ewdx_loadmemory(const void *bmp, int size, int slot) {
     t->w = W; t->h = H; t->valid = 1;
     t->vflip = 0;  // FUN_10001b30 clears +0x90 on load
     if (first) {
-        char msg[96];
         first = 0;
-        snprintf(msg, sizeof(msg), "first texture up (slot %d, %dx%d)", slot, W, H);
+        ewdx_boot_journal("first texture up");
+    }
+#ifdef EWDX_DGCOPY_JOURNAL
+    // v17 diagnostics: texture-slot timeline (pairs with the [dgcopy] stream).
+    {
+        char msg[96];
+        snprintf(msg, sizeof(msg), "[loadmem] slot=%d %dx%d (%d bytes)",
+                 slot, W, H, size);
         ewdx_boot_journal(msg);
     }
+#endif
     return -1;
 }
 

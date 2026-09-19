@@ -364,7 +364,7 @@ static int rc_vload_restore(PVal *pv, int varid) {
     char *name;
     const EwdxHspvEntry *e;
     const uint8_t *payload;
-    int flag, i;
+    int flag;
     if (pv == NULL || varid < 0) return -1;
     name = code_getdebug_varname(varid);
     if (name == NULL || name[0] == '\0') return -1;
@@ -398,7 +398,7 @@ static int rc_vload_restore(PVal *pv, int varid) {
         master.len[4] = e->master.len[4];
         master.size = (int)e->master.size;
         master.support = e->master.support;
-        EWDX_LOGW("vload: '%s' flag=%d len=[%u,%u,%u,%u] size=%u sup=%#x",
+        EWDX_LOGW("vload: rest '%s' flag=%d len=[%u,%u,%u,%u] size=%u sup=%#x",
                   name, flag, master.len[1], master.len[2], master.len[3],
                   master.len[4], master.size, master.support);
         // File-end bound for payload walks (truncated file guard).
@@ -920,6 +920,14 @@ static int rc_cmdfunc_dllcmd(int cmd) {
         if (!rc_vload.active) return rc_stat(-1);
         varid = code_getdebug_varid(pv);
         rc = rc_vload_restore(pv, varid);
+        // v17 diagnostics: completion line per var (the per-var 'vload: rest'
+        // line prints before the fill; this one confirms the fill outcome).
+        {
+            char name[64];
+            char *vn = code_getdebug_varname(varid);
+            snprintf(name, sizeof(name), "%s", vn ? vn : "?");
+            EWDX_LOGW("vload: done '%s' rc=%d", name, rc);
+        }
         return rc_stat(rc);
     }
     case EWDX_VLOADEND: {

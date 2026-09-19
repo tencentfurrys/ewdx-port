@@ -41,7 +41,7 @@ add_library(hsp3core STATIC
     "${OPENHSP_HSP3_DIR}/hsp3.cpp"
     "${EWDX_DIR}/vm/hsp3code.cpp"
     "${OPENHSP_HSP3_DIR}/hsp3debug.cpp"
-    "${OPENHSP_HSP3_DIR}/hsp3int.cpp"
+    "${EWDX_DIR}/vm/hsp3int.cpp"
     "${EWDX_DIR}/vm/hspvar_core.cpp"
     "${OPENHSP_HSP3_DIR}/hspvar_int.cpp"
     "${OPENHSP_HSP3_DIR}/hspvar_str.cpp"
@@ -99,6 +99,12 @@ set_source_files_properties(
 )
 # 64-bit HSP VM (silences hsp3struct.h #warning; matches arm64 pointers).
 target_compile_definitions(ewdx PUBLIC HSP64)
+# v17 diagnostics: journal every DGGCOPY (id, dst, src, scale) to the boot
+# journal. OFF for gameplay builds: each line costs fopen/fclose + a JNI
+# MediaStore flush, and in-game every sprite has unique coords so the
+# throttle never trips -> hundreds of I/O ops per frame (the v18 lag).
+# Re-enable ONLY for short repro runs.
+# target_compile_definitions(ewdx PUBLIC EWDX_DGCOPY_JOURNAL)
 target_include_directories(ewdx PUBLIC
     "../../../../../ewdx_ndk"
     "../../../../../../SDL_ttf"

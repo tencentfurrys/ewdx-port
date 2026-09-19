@@ -19,7 +19,7 @@
 
 // Bump per shipped build; journaled right after "=== run ===" so every
 // collected log positively identifies the binary that produced it.
-#define EWDX_BUILD_TAG "v16-2026-09-18-str-payload-span"
+#define EWDX_BUILD_TAG "v19-2026-09-19-nojournal-perf"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -797,7 +797,7 @@ static void boot_crash_log_path(char *out, size_t cap) {
 //   Android 10+: MediaStore insert (no permission needed for own files)
 //   older:       direct Download/ write (+ runtime storage-permission ask)
 #define EWDX_MIRROR_NAME "ewdx-boot.log"
-#define EWDX_MIRROR_CAP 24576
+#define EWDX_MIRROR_CAP 65536  // v19: 24 KB kept evicting boot-phase evidence
 static char g_mirror[EWDX_MIRROR_CAP];
 static size_t g_mirror_len = 0;
 
@@ -961,12 +961,16 @@ static int boot_mirror_mediastore(JNIEnv *env) {
     }
     // Canonical name first; if MediaProvider refuses (stale row owned by
     // another install — DatabaseUtils "failed to build unique file"), fall
-    // back to a fresh per-run name so the mirror still lands.
+    // back to a fresh per-run name so the mirror still lands. The fallback
+    // stamp is computed ONCE per process (was: per flush — SDL_GetTicks/1000
+    // changed every second, so each flush created a NEW Downloads file and
+    // flooded the device with ewdx-boot-<t>.log snapshots).
     uri = boot_mediastore_uri(env, resolver, EWDX_MIRROR_NAME);
     if (uri == NULL) {
+        static unsigned stamp = 0;
         char alt[64];
-        snprintf(alt, sizeof(alt), "ewdx-boot-%u.log",
-                 (unsigned)(SDL_GetTicks() / 1000u));
+        if (stamp == 0) stamp = (unsigned)(SDL_GetTicks() / 1000u) | 1u;
+        snprintf(alt, sizeof(alt), "ewdx-boot-%u.log", stamp);
         uri = boot_mediastore_uri(env, resolver, alt);
     }
     if (uri != NULL) {
@@ -1103,6 +1107,11 @@ static void boot_mirror_flush(void) {
     // filesDir logging (the authoritative journal) is unaffected.
     now = SDL_GetTicks();
     if (fails >= 3 && now - last_try < 30000u) return;
+    // v19: also rate-limit SUCCESSFUL flushes. With per-sprite journaling
+    // active, a MediaStore round-trip per journal line (hundreds/frame) is
+    // its own performance bug; 500 ms keeps the mirror fresh enough for
+    // post-mortem collection while costing nothing in-game.
+    if (now - last_try < 500u) return;
     last_try = now;
     env = (JNIEnv *)SDL_AndroidGetJNIEnv();
     if (env == NULL) return;
@@ -1119,6 +1128,35 @@ static void boot_mirror_flush(void) {
 static void boot_mirror_flush(void) {}
 #endif  // __ANDROID__
 
+// v17 diagnostics throttle: per-frame DGGCOPY journaling floods the 24 KB
+// Downloads mirror with cross-frame repeats, evicting the stage-load evidence.
+// Per-message occurrence counter: the first 32 occurrences of each distinct
+// line pass verbatim, then every 50th is emitted with its running count
+// ("[dgcopy] id=... #o=50"). Distinct dst/src/scale tuples produce distinct
+// lines, so gameplay variety still surfaces while static repeats collapse.
+#define EWDX_JOURNAL_THROTTLE_PASS 32
+#define EWDX_JOURNAL_THROTTLE_EVERY 50
+static int g_journal_seen = 0;
+
+static void ewdx_journal_emit(const char *msg) {
+    char path[2048];
+    FILE *fp;
+    int n = ++g_journal_seen;
+    boot_crash_log_path(path, sizeof(path));
+    fp = fopen(path, "a");
+    if (fp != NULL) {
+        fprintf(fp, "%s\n", msg);
+        fclose(fp);  // close => unbuffered on crash
+    }
+    if (n <= EWDX_JOURNAL_THROTTLE_PASS ||
+        n % EWDX_JOURNAL_THROTTLE_EVERY == 0) {
+        EWDX_LOGW("boot: %s", msg);
+    }
+    // Mirror always (its own eviction is what makes throttling matter).
+    boot_mirror_push(msg);
+    boot_mirror_flush();
+}
+
 void ewdx_boot_journal(const char *msg) {
     char path[2048];
     FILE *fp;
@@ -1129,6 +1167,12 @@ void ewdx_boot_journal(const char *msg) {
     if (fp == NULL) return;
     fprintf(fp, "%s\n", msg);
     fclose(fp);  // close => unbuffered on crash
+    // v17: high-volume diagnostic lines ([dgcopy]) go through the throttle
+    // instead of unconditionally spamming logcat.
+    if (strncmp(msg, "[dgcopy]", 8) == 0) {
+        ewdx_journal_emit(msg);
+        return;
+    }
     EWDX_LOGW("boot: %s", msg);
     boot_mirror_push(msg);
     boot_mirror_flush();

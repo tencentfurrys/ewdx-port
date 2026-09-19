@@ -235,6 +235,20 @@ int ewdx_select(int id) {
     }
     if (id != ewdx.target) ewdx_flush();  // queued quads belong to the old FBO
     ewdx.target = id;
+#ifdef EWDX_DGCOPY_JOURNAL
+    // v17 diagnostics: journal target switches (rare events, no throttle).
+    {
+        static int lastj = -1;
+        static unsigned nsw = 0;
+        if (id != lastj) {
+            char msg[80];
+            lastj = id;
+            nsw++;
+            snprintf(msg, sizeof(msg), "[gsel] target=%d (switch #%u)", id, nsw);
+            ewdx_boot_journal(msg);
+        }
+    }
+#endif
     glBindFramebuffer(GL_FRAMEBUFFER, ewdx.buf[id].fbo); // slot 0 fbo==0 (default)
     ewdx_apply_viewport();
     return -1;
