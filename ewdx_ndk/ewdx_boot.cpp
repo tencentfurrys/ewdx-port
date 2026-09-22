@@ -19,7 +19,7 @@
 
 // Bump per shipped build; journaled right after "=== run ===" so every
 // collected log positively identifies the binary that produced it.
-#define EWDX_BUILD_TAG "v19-2026-09-19-nojournal-perf"
+#define EWDX_BUILD_TAG "v21-2026-09-22-pivot-recon"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -720,6 +720,23 @@ int ewdx_boot_startup(void) {
     }
     EWDX_LOGW("boot: HSP VM ready (vars=%d)", ctx->hsphed->max_val);
     ewdx_boot_journal("HSP VM ready");
+    // Defensive (v21): debag_mode gates the cort/scope debug overlay
+    // (*label_232) and is NEVER assigned in the whole 31k-line script
+    // (single occurrence = the read). HSP zero-inits globals so on PC the
+    // overlay is dead code; force the same invariant here regardless of
+    // VM memory state so the overlay can never appear on device.
+    {
+        int vid = code_getdebug_seekvar("debag_mode");
+        if (vid >= 0) {
+            PVal *pv = &ctx->mem_var[vid];
+            if (pv->flag == HSPVAR_FLAG_INT && pv->mode == HSPVAR_MODE_MALLOC) {
+                *(int *)HspVarCorePtr(pv) = 0;
+                char msg[64];
+                snprintf(msg, sizeof(msg), "debag_mode forced 0 (vid=%d)", vid);
+                ewdx_boot_journal(msg);
+            }
+        }
+    }
     return 0;
 }
 
@@ -1253,6 +1270,8 @@ void ewdx_boot_crash_ui_init(void) {
     // Build tag: positively identify the binary that produced this log
     // (2026-09-16 session analyzed err5fix logs believing they were newer).
     ewdx_boot_journal("build " EWDX_BUILD_TAG);
+    ewdx_boot_journal("fixes: flag4 pivot=center (reconstructed from v20 "
+                      "binary diff); blend 3/4 kept (verified vs web ref)");
 }
 
 void ewdx_boot_crash_clean(void) {

@@ -177,15 +177,16 @@ static void emit_quad(GLuint tex, int texW, int texH, int vflip,
         float Xr = X * c - Y * s, Yr = X * s + Y * c;
         float Xs, Ys;
         if (ctr_anchor) {
-            // FUN_10001fa0 flag&4 else-branch, verbatim: pivot for the
-            // subtract is the LEFT-CENTER (dx, pivy) — i.e. X4 = cx-dx =
-            // X + dw/2, Y4 = cy-pivy = Y — then SCALE, then ROTATE, then
-            // anchor (dx-0.5, pivy-0.5). Differs from the plain path only
-            // when the scale is anisotropic AND the sprite is rotated
-            // (scale/rotate order swaps the axis convention).
-            float X4 = X + dw * K_HALF;
-            float Y4 = Y;
-            float Xsc = X4 * scx, Ysc = Y4 * scy;
+            // flag&4 pivot fix (v20, RECONSTRUCTED): scale pivots at the
+            // rect CENTER — X,Y are already pivot-relative (pivx, pivy),
+            // matching the rotation pivot — then rotate, then anchor
+            // (dx-0.5, pivy-0.5). Reconstruction method: normalized
+            // instruction diff of ewdx_copy_flags against the shipped v20
+            // libmain.so (analysis/v21_bindiff.py) — v20 drops the
+            // X+dw/2 left-center pre-offset this branch carried through
+            // v19. Differs from the plain path only when the scale is
+            // anisotropic AND the sprite is rotated.
+            float Xsc = X * scx, Ysc = Y * scy;
             Xs = Xsc * c - Ysc * s + ax;
             Ys = Xsc * s + Ysc * c + ay;
         } else {

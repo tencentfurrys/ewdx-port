@@ -6,8 +6,7 @@
 > Deeper context lives in `GUIDE.md` (how/why), `ewdx_ndk/README.md` (module map),
 > and `analysis/session-*.md` (per-day forensic logs).
 >
-> Last updated: **2026-09-22** (session start; owner's phone dying — this file
-> written early so nothing is lost).
+> Last updated: **2026-09-22 (session B)** — v21 built from reconstructed v20 fix.
 
 ## What this project is (30 seconds)
 
@@ -17,104 +16,126 @@ decompiled `start.ax` (764 KB bytecode / 31,013 lines in `artifacts/`).
 No game assets in the repo (rights + size). Build needs sibling checkouts
 per `refs.md`.
 
-## Current state (2026-09-22)
+## Current state (2026-09-22, session B)
 
-- Repo HEAD at recall time: `07a998c` "docs: v20 bug triage" (v19-era code).
-- **The v20 source was NEVER committed.** The only v20 artifact is the binary
-  `Downloads/ewdx-v20-flag4-fix.apk` (build tag `v20-2026-09-20-flag4-pivot-fix`).
-  Before ANY source change: diff v20's `libmain.so` against a HEAD build or risk
-  regressing the v20 fix. (Known v20 binary facts: blend tables at
-  `libmain.so+0x14a24`/`+0x14a44` match the repo byte-for-byte — verified 09-21.)
-- **Owner-confirmed (2026-09-22): v20 FIXED the "joints" bug** — player/enemy
-  sprites no longer look off/weird (that was the flag&4 pivot fix). Do not undo.
-- Shipping v19 code + v20-only binary divergence is the top repo-hygiene risk.
+- **The lost v20 source is RECONSTRUCTED and now lives in the repo.** The v20
+  "flag4 pivot fix" was recovered by normalized instruction diff of HEAD vs the
+  shipped v20 `libmain.so` (`analysis/v21_bindiff.py`): exactly ONE function
+  differed — `ewdx_copy_flags` (DGGCOPY path with `emit_quad` inlined). In the
+  flag&4 (ctr_anchor) branch, v20 scales around the rect CENTER
+  (`Xsc = X*scx` — X is already pivot-relative) instead of HEAD's left-center
+  pre-offset (`X4 = X + dw/2`). Applied to `ewdx_ndk/ewdx_batch.cpp`;
+  verification rebuild matches v20 at 707/707 instructions with only one
+  benign stack-slot addressing-mode difference. **Owner-confirmed v20 fixed
+  the joints bug — this restores it in source so it can never regress again.**
+- **v21 APK built and shipped:** `~/Downloads/ewdx-v21-pivot-recon.apk`
+  (build tag `v21-2026-09-22-pivot-recon`, 57.4 MB). Contents over v20:
+  reconstructed pivot fix (identical code), `debag_mode` force-0 at VM start,
+  compile-gated `[dgline]` journal (off by default), boot journal lines
+  recording the fix provenance.
+- Blend modes 3/4: **NOT swapped — do not change them.** See "Open bugs" #1.
 
-## Open bugs (in owner's words + mapped to repo analysis)
+## Open bugs (REVISED 2026-09-22 — read before "fixing" anything)
 
-1. **POV/maw animation wrong** — "it's not showing much, then some parts of
-   body and black". This is **Bug 1** of `analysis/session-2026-09-21-v20-bug-triage.md`:
-   - Mechanism: vore/maw interior composed in buffer 5, masked by the
-     quarter-disc tile `system.bmp (242,72,40,40)` drawn 4× mirrored with
-     `DGBLENDMODE 3` (decompile L24144–24180).
-   - **Strong hypothesis: port's DGBLENDMODE modes 3/4 are SWAPPED**
-     (`BLEND_SRC/DST[3]/[4]` in `ewdx_ndk/ewdx_gles.cpp`). D3D9 enum order
-     SRCCOLOR=3/INVSRCCOLOR=4 suggests a plain jump table gives
-     3=multiply, 4=invert — opposite of the repo table today.
-   - Also audit `p_light` lifetime (maw interior draws at alpha `p_light`;
-     if 0 → interior invisible → black disc even with correct blend).
-   - Confirm before shipping: Ghidra re-import hmm.dll → DGBLENDMODE export →
-     read the 8 jump targets' SetRenderState pairs. Ghidra project was lost
-     in the 09-18 RDP wipe; must re-import (hmm.dll is in the game zip, NOT
-     in the repo — ask owner).
-2. **Stray black lines player↔enemies** — **Bug 2** of the same triage doc.
-   All 6 `putline`/`DGLINE` call sites in the script are intentional VFX
-   (beam/tether colors documented there). Hypotheses H1 stuck grab-tether
-   state, H2 DGLINE quad blend grouping, H3 shadow-prims degenerate.
-   Plan: add a `[dgline]` journal (throttled like v17's `[dgcopy]`, see
-   `ewdx_boot.cpp` throttle + `EWDX_DGCOPY_JOURNAL` CMake flag pattern) and
-   capture one repro run.
-3. Defensive fix queued (free): force `debag_mode = 0` at VM start — the
-   script never assigns it; its debug overlay is dead code on PC and must
-   never wake up (triage doc suggestion #3).
+1. **POV/maw "black box + faint pink" — VERDICT: matches the reference.**
+   The triage doc's blend-3/4-swap hypothesis is REFUTED by pixels:
+   - Ground truth tile (`analysis/v21_facts.py`, `v21_tile_big.png`):
+     `system.bmp (242,72,40,40)` is **WHITE OUTSIDE the disc radius,
+     transparent INSIDE** (a porthole mask) — the triage doc had the
+     orientation backwards ("white disc, black corners"). It is a
+     quarter; 4× mirrored copies make the full 80×80 disc.
+   - Therefore mode 3 = invert-multiply (port table today) paints the
+     plate OUTSIDE the disc black and keeps the disc interior — the black
+     80×80 square with a round window is the game's INTENDED maw art.
+     Multiply (the "swap") would black out the interior entirely.
+   - The 09-19 capture — which per the triage doc is the **web reference
+     edition** — shows the SAME black-plate + dark-interior maw
+     (`analysis/v21_dense/maw_*.jpg`). The user's complaint
+     "not showing much, then some parts of body" is about how LITTLE of
+     the prey is visible inside — that is `p_light`-driven interior alpha
+     (decays −40/frame after a swallow) plus the game's art, not a blend bug.
+   - If the owner still reports a difference vs the web edition on v21,
+     next lever is `p_light`/`p_light2` lifetime, NOT the blend table.
+2. **Stray black lines player↔enemies — reduced priority; likely reference
+   parity.** `debag_mode` overlay theory REFUTED: the vendored VM
+   zero-initializes globals (`HspVarCoreClear` on every global —
+   "グローバル変数を0にリセット"), so the overlay is dead on PC and port
+   alike; the force-0 at boot is kept as pure defense. NOTE the triage doc
+   itself observed the SAME stray line in the web capture at t≈42.8 s —
+   strong hint the line is in the original too. The `[dgline]` journal is
+   now in the tree (`EWDX_DGLINE_JOURNAL` compile flag, mirror of the v17
+   `[dgcopy]` one) — if the owner sees lines the web edition does NOT show,
+   build once with `-DEWDX_DGLINE_JOURNAL` via a one-line CMakeLists edit,
+   capture one repro, match colors/blends against the documented putline
+   call sites (beam 190,255,120 / 190,230,255 / 255,230,150 blend 2;
+   boss tether 255,230,240 blend 3; grab streaks 255,220,240 blend 1).
+3. Done defensively: `debag_mode` forced 0 at VM start (log line
+   `debag_mode forced 0 (vid=N)` in every v21 boot log).
 
 ## Evidence locations (on THIS machine, NOT in repo)
 
 | File | What |
 |---|---|
-| `~/Downloads/2026_09_19_23_36_54.mp4` | 47.3 s v20 capture (maw black box ~0–16 s, correct scene ~21–44 s, stray line ~42.8–43.6 s) |
-| `~/Downloads/ewdx-v20-flag4-fix.apk` | The v20 binary (extract: `unzip`; check tag: strings-grep `build v20` in `lib/arm64-v8a/libmain.so`) |
+| `~/Downloads/2026_09_19_23_36_54.mp4` | 47.3 s capture of the WEB reference edition (maw ~0–16 s, stray line ~42.8–43.6 s) |
+| `~/Downloads/ewdx-v20-flag4-fix.apk` | The v20 binary (basis of the pivot reconstruction) |
+| `~/Downloads/ewdx-v21-pivot-recon.apk` | **NEW v21 build (this session)** |
 | `~/Downloads/20.zip` | 96 v20 boot logs |
-| `ewdx-port/analysis/frames_2026-09-21/` | 24 extracted video frames + contact sheet (already in repo) |
+| `analysis/v21_dense/` | maw crops from the web capture (ground truth) |
+| `analysis/v21_tile_big.png` | the porthole mask tile, magnified |
+| `analysis/v21_bindiff.py` / `v21_funcdiff.py` | reusable stripped-binary differ (HEAD/v20/v21 disasm -> normalized per-function diff) |
+| `/tmp/ewdx_v20/` | extracted v20 APK (re-extract if tmp wiped: `unzip ~/Downloads/ewdx-v20-flag4-fix.apk`) |
+| `/tmp/dis_HEAD.txt`, `dis_v20.txt`, `dis_v21.txt`, `libmain_*.so` | disassembly corpus for the differ |
 
-Video analysis tooling: ffmpeg NOT installed on this machine. Use Python
-`opencv-python-headless` + `numpy` + `pillow` instead (pip install was
-interrupted mid-run on 09-22 — re-run:
-`python3 -m pip install --user opencv-python-headless numpy pillow`).
-Reference frame-extraction pipeline from the 09-21 session lives in
-`analysis/frames_2026-09-21/` naming + the triage doc.
+Video tooling: ffmpeg NOT installed. Use Python `opencv-python-headless`
++ `numpy` + `pillow` (installed 09-22, user site).
 
-## Build environment status (2026-09-22)
+## Build environment status (2026-09-22, verified working)
 
-- Android SDK `C:\Android\android-sdk`, NDK **27.3.13750724** present
-  (also 28.2 / 29.0; the project pins 27.3). llvm-objdump available at
-  `ndk/27.3.13750724/toolchains/llvm/prebuilt/windows-x86_64/bin/` for
-  binary forensics (that's how the 09-21 blend-table check was done).
-- Ghidra: **not installed** (needed for the DGBLENDMODE jump-table confirmation).
-- Sibling checkouts (required by `android/app/src/main/cpp/CMakeLists.txt`):
-  **MISSING** — clone per `refs.md`:
-  OpenHSP `3dbb872`, SDL2 `b90ac95` (branch SDL2), SDL_ttf `7f16032`
-  (+ submodules freetype `535d299`, harfbuzz `950d232`) as siblings of `ewdx-port/`.
-- Python 3.12 (hostedtoolcache). MinGW g++ exists for host tests.
-- Game assets: stage from the v20 APK into
-  `android/app/src/main/assets/` (593 files: start.ax, save.dat, data/).
-- Build: `cd android && gradlew.bat assembleDebug -x lint` (~2 min warm).
-  Host syntax gate: NDK clang++ `-fsyntax-only` per TU, `-DHSP64`, `-Wall -Wextra`.
+- Android SDK `C:\Android\android-sdk`, NDK **27.3.13750724** (project pin).
+- **`android/local.properties` MUST use forward slashes:**
+  `sdk.dir=C:/Android/android-sdk` — a backslash version
+  (`C\:\Android\...`) silently mangles to `C:Androidandroid-sdk` and gradle
+  dies with "The filename, directory name, or volume label syntax is
+  incorrect" at the SdkLocation listener (cost half a session to find).
+- Sibling checkouts RESTORED as **`~/Documents/{SDL2,SDL_ttf,OpenHSP}`**
+  (must be siblings of `ewdx-port/` — the CMake relative paths count on it;
+  a clone into `~/` will fail CMake with "not an existing directory").
+  Pins per `refs.md`; SDL_ttf needs `git submodule update --init`
+  (freetype + harfbuzz vendored).
+- Build: `cd android && gradlew.bat assembleDebug -x lint` (~1.5 min warm,
+  ~90 s cold with gradle 8.7 download). APK lands in
+  `app/build/outputs/apk/debug/app-debug.apk`.
+- Game assets: staged 593 files from the v20 APK into
+  `android/app/src/main/assets/` (start.ax + save.dat + data/) — already
+  in place; if wiped, re-stage from an APK extract.
+- Ghidra: still not installed (only needed if blend/emit questions return).
+- Python 3.12 + cv2/numpy/PIL OK.
 
 ## Worked-example fixes to reuse (do not rediscover)
 
-- Audio self-deadlock pattern → `ewdx_audio.cpp` init comments (never hold
-  `au_mtx` across calls that re-lock it).
-- SJIS at any SDL/JNI boundary aborts ART (SIGABRT) → always
-  `ewdx_sjis_to_utf8()` first (`ewdx_extcmd.cpp` dialog/title).
-- vload STR restore: `master.size` is the POINTER-TABLE size (elems*4), the
-  payload is `size/4` self-describing blocks — validate against file end
-  BEFORE re-dimming (`ewdx_register.cpp` `rc_vload_restore`).
-- `ginfo(2)` must be 0 when focused / −1 when not, or the script's
-  `*label_198` guard skips ALL input reads (menus freeze).
-- Tap input must behave like a ~180 ms physical key, never consume-once
-  (three same-frame readers: DIGETJOYSTATE, getkey, getkey2).
-- Diagnostics journaling costs fopen/fclose + MediaStore flush per line →
-  compile OUT for gameplay builds (the v18 lag), throttle when on
-  (`EWDX_JOURNAL_THROTTLE_*` in `ewdx_boot.cpp`).
-- LESSON (from v9): the shipped APK binary can be ahead of git. Diff
+- **Stripped-binary source recovery (this session's trick):** build HEAD
+  with the same NDK, `llvm-objdump -d --no-show-raw-insn` both `.so` files,
+  run `analysis/v21_bindiff.py` — one differing function = the missing
+  source delta. Register-noise filter: focus on `ldr/str s0..s31`,
+  `fmov #const`, `fmadd/fnmsub`, and dropped/added float ops; ignore
+  x8/x9 register-pair swaps and `[sp]` vs `[x29]` slot choices.
+- Audio self-deadlock pattern → `ewdx_audio.cpp` init comments.
+- SJIS at any SDL/JNI boundary aborts ART (SIGABRT) → `ewdx_sjis_to_utf8()`.
+- vload STR restore: `master.size` is the POINTER-TABLE size (elems*4) —
+  validate against file end BEFORE re-dimming (`rc_vload_restore`).
+- `ginfo(2)` focused/-1 contract or `*label_198` skips all input.
+- Tap input = ~180 ms physical key, never consume-once.
+- Journaling costs fopen/fclose + MediaStore flush per line → compile OUT
+  for gameplay builds (`EWDX_DGCOPY_JOURNAL` / `EWDX_DGLINE_JOURNAL`).
+- LESSON (v9 + v20): the shipped APK binary can be ahead of git. Diff
   `libmain.so` before rebuilding.
 
 ## Security notes
 
 - 2026-09-22: a GitHub PAT was pasted into chat by the owner to enable the
   memory push. **It is burned — revoke it** (GitHub → Settings → Developer
-  settings → Tokens) once this push lands, and issue a fresh one. This is the
-  same incident class as the 2026-09-18 handoff (`analysis/session-handoff-2026-09-18.md`).
+  settings → Tokens) and issue a fresh one. Same incident class as the
+  2026-09-18 handoff (`analysis/session-handoff-2026-09-18.md`).
 - The token is deliberately NOT stored in this file or anywhere in the repo.
 
 ## Heartbeat protocol (for future sessions)
@@ -128,6 +149,13 @@ Reference frame-extraction pipeline from the 09-21 session lives in
 ### Session log
 - 2026-09-22 (session A): repo fully re-read (all sources/docs/tools/vm diffs).
   MEMORY.md created + pushed as the recall heartbeat. No code changes yet.
-  Next: frame extraction from the 09-19 video, v20 APK tag/blend verification,
-  hmm.dll DGBLENDMODE confirmation, then v21 (blend 3/4 + [dgline] journal +
-  debag_mode=0).
+- 2026-09-22 (session B): v20 pivot fix reconstructed from the v20 binary
+  (normalized disasm diff, ONE function: `ewdx_copy_flags` ctr_anchor branch
+  scale pivot = rect center). Blend-3/4-swap hypothesis REFUTED by pixel
+  ground truth (mask tile is white-outside-disc; web reference shows the
+  same black-plate maw). debag_mode overlay theory refuted (VM zero-inits).
+  v21 = reconstructed fix + debag_mode force-0 + `[dgline]` journal hook.
+  APK shipped to `~/Downloads/ewdx-v21-pivot-recon.apk`. NEXT: owner device
+  test of v21 (joints still fixed? maw/lines vs web reference?); if lines
+  differ from reference, one EWDX_DGLINE_JOURNAL repro run; keep v20 APK
+  as rollback.

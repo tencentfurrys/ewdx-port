@@ -670,7 +670,27 @@ static int rc_dg_4i(EwdxCmd id, int a, int b, int c, int d) {
     case EWDX_DGPOS: return dg_pos(a, b);
     case EWDX_DGRECT: return dg_rect(a, b, c, d);
     case EWDX_DGSCALE: return dg_scale(a, b, c);  // d reserved, always 0
-    case EWDX_DGLINE: return dg_line(a, b, c, d);
+    case EWDX_DGLINE: {
+#ifdef EWDX_DGLINE_JOURNAL
+        // v21 diagnostics (mirror of EWDX_DGCOPY_JOURNAL): log every DGLINE
+        // with endpoints + current color/blend so a stray-line repro can be
+        // matched against the putline call sites (beam colors 190,255,120 /
+        // 190,230,255 / 255,230,150 blend 2; boss tether 255,230,240 blend 3;
+        // grab streaks 255,220,240 blend 1; cort overlay blend 1).
+        int rc = dg_line(a, b, c, d);
+        {
+            char msg[160];
+            snprintf(msg, sizeof(msg),
+                     "[dgline] (%d,%d)-(%d,%d) col=(%d,%d,%d,%d) blend=%d",
+                     a, b, c, d, ewdx.st.r, ewdx.st.g, ewdx.st.b, ewdx.st.a,
+                     ewdx.st.blend);
+            ewdx_boot_journal(msg);
+        }
+        return rc;
+#else
+        return dg_line(a, b, c, d);  // tail-call (byte-parity with v20 path)
+#endif
+    }
     default: break;
     }
     return 0;
