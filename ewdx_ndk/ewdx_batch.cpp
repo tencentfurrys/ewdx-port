@@ -140,20 +140,14 @@ static void emit_quad(GLuint tex, int texW, int texH, int vflip,
 
     float c = ewdx_cosLut[ang & 0xff];
     float s = ewdx_sinLut[ang & 0xff];
-    // FUN_10001fa0 flag&4 (bVar13&4 else-branch): vertex y pre-scales by the
-    // 8.8 scale around the DEST TOP-LEFT (local_20 = dh*0.5 + dy), then the
-    // rotate result adds (dx-0.5, dy-0.5) instead of the corner pivot pair.
-    // flag&2 (scale-to-rect) keeps the &1 centered pivot path instead — the
-    // else-branch is only reached for the plain per-part sprites, which all
-    // pass flags with bit 2 clear (menu 0/8, in-game 7+).
+    // FUN_10001fa0 (bVar13 flags): both branches rotate around the rect
+    // CENTER (pivx, pivy). v22 (see the ctr_anchor branch below +
+    // analysis/session-2026-09-22-v22-head-door-pov.md): the flag&4 anchor
+    // is (pivx-0.5, pivy-0.5) — verbatim decompile. The plain (&4==0)
+    // branch anchors at (dx-0.5, dy-0.5) — verified numerically against
+    // the decompile by analysis/v22_pivot_verify.py.
     float pivx = dx + dw * K_HALF;
     float pivy = dy + dh * K_HALF;
-    // flag&4 anchors the result at (dx-0.5, pivy-0.5); plain path effectively
-    // anchors at (dx-0.5, pivy-0.5) too (the +pivx-dx / +pivy-dy terms cancel
-    // through the scale in the decompiled math). Verified: both branches
-    // produce identical output at angle 0 / scale 256, as the game requires.
-    float ax = dx - K_HALF;
-    float ay = pivy - K_HALF;
 
     float cx[4] = { dx, dx + dw, dx + dw, dx };
     float cy[4] = { dy, dy, dy + dh, dy + dh };
@@ -177,19 +171,26 @@ static void emit_quad(GLuint tex, int texW, int texH, int vflip,
         float Xr = X * c - Y * s, Yr = X * s + Y * c;
         float Xs, Ys;
         if (ctr_anchor) {
-            // flag&4 pivot fix (v20, RECONSTRUCTED): scale pivots at the
-            // rect CENTER — X,Y are already pivot-relative (pivx, pivy),
-            // matching the rotation pivot — then rotate, then anchor
-            // (dx-0.5, pivy-0.5). Reconstruction method: normalized
-            // instruction diff of ewdx_copy_flags against the shipped v20
-            // libmain.so (analysis/v21_bindiff.py) — v20 drops the
-            // X+dw/2 left-center pre-offset this branch carried through
-            // v19. Differs from the plain path only when the scale is
-            // anisotropic AND the sprite is rotated.
+            // flag&4 branch, now VERBATIM from the Ghidra decompile of
+            // hmm.dll FUN_10001fa0 (analysis/decomp_inner.txt): X,Y are
+            // pivot-relative, SCALE about the rect center, ROTATE, anchor
+            // (pivx-0.5, pivy-0.5). At identity this reduces to cx-0.5 /
+            // cy-0.5 — the same placement as the plain branch — and grows
+            // the part around its own center when scaled/rotated.
+            // History: v19 anchored x at dx-0.5 with a +dw/2 pre-offset
+            // (error dw/2*(scale-1) + rotation error = the "joints off"
+            // reports); v20/v21 fixed the scale pivot but dropped the dw/2
+            // anchor compensation (constant -dw/2 shift = "head off / door
+            // floating" on device). This is the decompile-exact form.
             float Xsc = X * scx, Ysc = Y * scy;
-            Xs = Xsc * c - Ysc * s + ax;
-            Ys = Xsc * s + Ysc * c + ay;
+            Xs = Xsc * c - Ysc * s + (pivx - K_HALF);
+            Ys = Xsc * s + Ysc * c + (pivy - K_HALF);
         } else {
+            // FUN_10001fa0 &4==0 branch, verbatim (decomp_inner.txt):
+            // pre-add the pivot pair, scale, anchor (dx-0.5, dy-0.5) —
+            // i.e. plain quads grow down-right from the TOP-LEFT corner.
+            // (Verified numerically against the decompile: the original
+            // port form was already exact here — do not "fix" it.)
             float Xd = Xr + pivx - dx, Yd = Yr + pivy - dy;
             Xs = Xd * scx + dx - K_HALF;
             Ys = Yd * scy + dy - K_HALF;

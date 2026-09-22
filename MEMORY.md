@@ -6,7 +6,8 @@
 > Deeper context lives in `GUIDE.md` (how/why), `ewdx_ndk/README.md` (module map),
 > and `analysis/session-*.md` (per-day forensic logs).
 >
-> Last updated: **2026-09-22 (session B)** — v21 built from reconstructed v20 fix.
+> Last updated: **2026-09-22 (session C)** — v21 device-tested, head/door bug
+> diagnosed, v22 fix built (pending owner test).
 
 ## What this project is (30 seconds)
 
@@ -16,7 +17,24 @@ decompiled `start.ax` (764 KB bytecode / 31,013 lines in `artifacts/`).
 No game assets in the repo (rights + size). Build needs sibling checkouts
 per `refs.md`.
 
-## Current state (2026-09-22, session B)
+## Current state (2026-09-22, session C)
+
+- **v21 device test result (MuMu emulator): the flag&4 anchor was STILL
+  wrong** — head drawn ~half-a-part left, door floating (rotation turns
+  the shift into a vertical offset), POV interior parts misaligned
+  ("weird colors"). Cause: v20/v21 anchored the ctr_anchor branch at
+  (dx−0.5, pivy−0.5) instead of the decompile's (pivx−0.5, pivy−0.5);
+  the missing +dw/2 is a constant left-shift on every flag&4 part.
+- **v22 FIX BUILT (not yet owner-tested):**
+  `~/Downloads/ewdx-v22-decompile-anchor.apk`, tag
+  `v22-2026-09-22-flag4-decompile-anchor`. The ctr_anchor branch is now
+  verbatim from `analysis/decomp_inner.txt` (FUN_10001fa0): scale about
+  rect center, rotate, anchor (pivx−0.5, pivy−0.5). Plain branch
+  confirmed already-exact (a wrong edit to it was caught by the numerical
+  verifier `analysis/v22_pivot_verify.py` and reverted).
+- NEXT OWNER ACTION: install v22, check head/door/POV. v21 logs and the
+  4 MuMu videos are the baseline evidence (`analysis/v21_mumu/`,
+  `analysis/session-2026-09-22-v22-head-door-pov.md`).
 
 - **The lost v20 source is RECONSTRUCTED and now lives in the repo.** The v20
   "flag4 pivot fix" was recovered by normalized instruction diff of HEAD vs the
@@ -155,7 +173,12 @@ Video tooling: ffmpeg NOT installed. Use Python `opencv-python-headless`
   ground truth (mask tile is white-outside-disc; web reference shows the
   same black-plate maw). debag_mode overlay theory refuted (VM zero-inits).
   v21 = reconstructed fix + debag_mode force-0 + `[dgline]` journal hook.
-  APK shipped to `~/Downloads/ewdx-v21-pivot-recon.apk`. NEXT: owner device
-  test of v21 (joints still fixed? maw/lines vs web reference?); if lines
-  differ from reference, one EWDX_DGLINE_JOURNAL repro run; keep v20 APK
-  as rollback.
+  APK shipped to `~/Downloads/ewdx-v21-pivot-recon.apk`.
+- 2026-09-22 (session C): v21 tested in MuMu — head-off + door-floating
+  reported with video evidence. Root cause: reconstruction preserved
+  v20's REMAINING anchor bug ((dx−0.5, pivy−0.5) instead of decompile's
+  (pivx−0.5, pivy−0.5); −dw/2 constant shift). v22 fix built from
+  decomp_inner.txt verbatim; plain branch verified already-exact via
+  v22_pivot_verify.py. APK: ~/Downloads/ewdx-v22-decompile-anchor.apk.
+  NEXT: owner v22 test; finish verifier plain-case test math; then POV
+  color re-check on v22.

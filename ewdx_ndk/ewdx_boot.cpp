@@ -19,7 +19,7 @@
 
 // Bump per shipped build; journaled right after "=== run ===" so every
 // collected log positively identifies the binary that produced it.
-#define EWDX_BUILD_TAG "v21-2026-09-22-pivot-recon"
+#define EWDX_BUILD_TAG "v22-2026-09-22-flag4-decompile-anchor"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1270,8 +1270,9 @@ void ewdx_boot_crash_ui_init(void) {
     // Build tag: positively identify the binary that produced this log
     // (2026-09-16 session analyzed err5fix logs believing they were newer).
     ewdx_boot_journal("build " EWDX_BUILD_TAG);
-    ewdx_boot_journal("fixes: flag4 pivot=center (reconstructed from v20 "
-                      "binary diff); blend 3/4 kept (verified vs web ref)");
+    ewdx_boot_journal("fixes: flag4 anchor=pivot (verbatim decompile "
+                      "FUN_10001fa0; fixes head-off / door-shift); blend 3/4 "
+                      "kept (verified vs web ref)");
 }
 
 void ewdx_boot_crash_clean(void) {
