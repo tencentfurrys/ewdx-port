@@ -6,9 +6,10 @@
 > Deeper context lives in `GUIDE.md` (how/why), `ewdx_ndk/README.md` (module map),
 > and `analysis/session-*.md` (per-day forensic logs).
 >
-> Last updated: **2026-09-22 (session D)** — v22 rebuilt on the fresh machine,
-> verifier fixed to 144/144 (+ regression probe), and binary-verified against
-> the shipped v21 APK (one semantic float-op delta = the anchor fix).
+> Last updated: **2026-09-22 (session E)** — v22 device-CONFIRMED (head/door
+> fixed). POV interior compared against the owner's reference capture with
+> phase-aligned metrics: reference parity (interior is dark + sparse early in
+> a hold in BOTH). mumu1's "36 s black disc" traced to a door scene, not POV.
 
 ## What this project is (30 seconds)
 
@@ -39,10 +40,11 @@ per `refs.md`.
   (`v22_pivot_verify.py` rewritten, 144/144 + a v21-regression probe that
   asserts the old anchor MIS-matches — see
   `analysis/session-2026-09-22-v22-rebuild-verify.md`).
-- NEXT OWNER ACTION: install v22, check head/door/POV. v21 (re-downloaded
-  from the owner's Mediafire link) and the 4 MuMu videos are the baseline
-  evidence (`analysis/v21_mumu/`,
-  `analysis/session-2026-09-22-v22-head-door-pov.md`).
+- NEXT OWNER ACTION: none pending on v22 — it is device-confirmed
+  (session E). POV interior = reference parity per
+  `analysis/session-2026-09-22-v22-pov-parity.md` + `analysis/v22_pov/`.
+  The owner's reference capture now lives at
+  `~/Downloads/2026_09_22_17_00_09.mp4` (854x480@33).
 
 - **The lost v20 source is RECONSTRUCTED and now lives in the repo.** The v20
   "flag4 pivot fix" was recovered by normalized instruction diff of HEAD vs the
@@ -199,3 +201,11 @@ Video tooling: ffmpeg NOT installed. Use Python `opencv-python-headless`
   semantic delta (the anchor fix), assets byte-identical. Session doc:
   `analysis/session-2026-09-22-v22-rebuild-verify.md`. NEXT: owner v22
   test (head/door/POV), then phone-parity run.
+- 2026-09-22 (session E): owner confirmed v22 fixes head/door on MuMu
+  (65/65 logs on the v22 tag). POV "only ~2 parts" investigated with
+  swallow-aligned metrics vs the owner's reference capture: ref shows
+  1-2 parts in the first ~5 s of a hold too; mumu2 matches (1→7→5 parts
+  by +8 s); verdict = reference parity, no port bug. mumu1's long dark
+  disc = a door/room scene, not a stuck POV. Evidence:
+  `analysis/v22_pov/` (report.html + sheets), doc:
+  `analysis/session-2026-09-22-v22-pov-parity.md`.
