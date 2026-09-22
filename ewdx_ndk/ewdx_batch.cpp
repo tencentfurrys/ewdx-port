@@ -207,6 +207,18 @@ static void emit_quad(GLuint tex, int texW, int texH, int vflip,
     batch_quads++;
 }
 
+#ifdef EWDX_MAW_JOURNAL
+// Session E POV diagnostics: journal every DGGCOPY into/out of buffer 5 (the
+// stomach/porthole composite) with color+blend, plus a pixel readback of the
+// 80x80 region when the game copies buffer 5 onto the scene (id=5, flag&1).
+// One gameplay run answers WHICH stage of the porthole pipeline is empty:
+//   - view_mot interior draws missing / alpha tiny  -> VM-side (script state)
+//   - draws present + readback black               -> render-side (blend/mask)
+// Costs one glReadPixels per maw composite (rare event); journal lines are
+// throttled by the boot journal itself. OFF for normal builds.
+#define EWDX_MAW_BUF 5
+#endif
+
 int ewdx_copy_flags(int id, int flags) {
     static int first = 1;
     if (id < 0 || id >= EWDX_MAX_BUFFERS) return 0;
@@ -215,6 +227,52 @@ int ewdx_copy_flags(int id, int flags) {
     float dx = (float)m_posx, dy = (float)m_posy;
     float dw = (float)m_rw, dh = (float)m_rh;
     if (flags & 1) { dx -= dw * K_HALF; dy -= dh * K_HALF; }  // centered
+#ifdef EWDX_MAW_JOURNAL
+    {
+        static unsigned seq = 0;
+        char msg[200];
+        snprintf(msg, sizeof(msg),
+                 "[maw] #%u id=%d f=%#x dst=(%d,%d %dx%d) sc=(%.2f,%.2f) ang=%u col=(%d,%d,%d,%d) blend=%d tgt=%d",
+                 ++seq, id, (unsigned)flags, m_posx, m_posy, m_rw, m_rh,
+                 m_scx / 256.0f, m_scy / 256.0f, (unsigned)m_ang,
+                 ewdx.st.r, ewdx.st.g, ewdx.st.b, ewdx.st.a,
+                 ewdx.st.blend, ewdx.target);
+        ewdx_boot_journal(msg);
+        if (id == EWDX_MAW_BUF) {
+            // readback the porthole source AFTER this draw lands: force-flush,
+            // bind buffer 5's FBO, read the (rx,ry,rw,rh) rect as RGBA.
+            ewdx_flush();
+            GLint fbo = 0, vp[4];
+            glGetIntegerv(GL_FRAMEBUFFER_BINDING, &fbo);
+            glGetIntegerv(GL_VIEWPORT, vp);
+            glBindFramebuffer(GL_FRAMEBUFFER, t->fbo);
+            glViewport(0, 0, t->w, t->h);
+            int rx = m_rx, ry = m_ry, rw = m_rw > 0 ? m_rw : 1, rh2 = m_rh > 0 ? m_rh : 1;
+            if (rx + rw > t->w) rw = t->w - rx;
+            if (ry + rh2 > t->h) rh2 = t->h - ry;
+            if (rw > 0 && rh2 > 0) {
+                unsigned char *px = (unsigned char *)malloc((size_t)rw * rh2 * 4);
+                if (px) {
+                    glReadPixels(rx, ry, rw, rh2, GL_RGBA, GL_UNSIGNED_BYTE, px);
+                    long sum = 0, npx = (long)rw * rh2, nalpha = 0;
+                    for (long i = 0; i < npx * 4; i += 4) {
+                        sum += px[i] + px[i + 1] + px[i + 2];
+                        if (px[i + 3] > 16) nalpha++;    // GL RGBA: A is byte 3
+                    }
+                    long rgb = sum / npx;                 // 0..765 avg per px
+                    int pct = (int)(100 * nalpha / npx);
+                    snprintf(msg, sizeof(msg),
+                             "[maw] buf5 readback %dx%d@(%d,%d): avgRGB=%ld nontransparent=%d%%",
+                             rw, rh2, rx, ry, rgb, pct);
+                    ewdx_boot_journal(msg);
+                    free(px);
+                }
+            }
+            glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+            glViewport(vp[0], vp[1], vp[2], vp[3]);
+        }
+    }
+#endif
 #ifdef EWDX_DGCOPY_JOURNAL
     // v17 diagnostics: journal every DGGCOPY the script issues. The v16
     // failure frames (system.bmp atlas drawn as one giant quad) need the

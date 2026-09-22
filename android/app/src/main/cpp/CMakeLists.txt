@@ -105,6 +105,10 @@ target_compile_definitions(ewdx PUBLIC HSP64)
 # throttle never trips -> hundreds of I/O ops per frame (the v18 lag).
 # Re-enable ONLY for short repro runs.
 # target_compile_definitions(ewdx PUBLIC EWDX_DGCOPY_JOURNAL)
+# Session E POV diagnostics (v23-diag build): journal buffer-5 (stomach
+# porthole) draws + pixel readback at each maw composite. Rare event, safe
+# for a short repro run. COMMENT OUT for normal gameplay builds.
+target_compile_definitions(ewdx PUBLIC EWDX_MAW_JOURNAL)
 target_include_directories(ewdx PUBLIC
     "../../../../../ewdx_ndk"
     "../../../../../../SDL_ttf"

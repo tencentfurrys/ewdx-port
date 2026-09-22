@@ -6,10 +6,13 @@
 > Deeper context lives in `GUIDE.md` (how/why), `ewdx_ndk/README.md` (module map),
 > and `analysis/session-*.md` (per-day forensic logs).
 >
-> Last updated: **2026-09-22 (session E)** — v22 device-CONFIRMED (head/door
-> fixed). POV interior compared against the owner's reference capture with
-> phase-aligned metrics: reference parity (interior is dark + sparse early in
-> a hold in BOTH). mumu1's "36 s black disc" traced to a door scene, not POV.
+> Last updated: **2026-09-22 (session E, corrected)** — v22 device-CONFIRMED
+> (head/door fixed). POV interior bug is REAL (session E first verdict of
+> "parity" was wrong: auto-alignment matched the wrong moments; with eyes on
+> matched frames, the ref maw shows the prey inside, the port's porthole is
+> empty black). v23-diag build shipped: `~/Downloads/ewdx-v23-diag-maw.apk`
+> (EWDX_MAW_JOURNAL: buffer-5 draw log + pixel readback, one run decides
+> VM-side vs render-side). Reference capture = CLOUD PHONE, not web.
 
 ## What this project is (30 seconds)
 
@@ -40,10 +43,13 @@ per `refs.md`.
   (`v22_pivot_verify.py` rewritten, 144/144 + a v21-regression probe that
   asserts the old anchor MIS-matches — see
   `analysis/session-2026-09-22-v22-rebuild-verify.md`).
-- NEXT OWNER ACTION: none pending on v22 — it is device-confirmed
-  (session E). POV interior = reference parity per
-  `analysis/session-2026-09-22-v22-pov-parity.md` + `analysis/v22_pov/`.
-  The owner's reference capture now lives at
+- NEXT OWNER ACTION: run `~/Downloads/ewdx-v23-diag-maw.apk`, trigger ONE
+  swallow, send the new boot log. `[maw]` lines decide: interior draws
+  missing/alpha-tiny = VM-side (script state/p_light), draws present but
+  readback black = render-side (mask/blend/buffer path). Until then do NOT
+  trust the session-E "parity" section below (see its CORRECTION header);
+  matched contact sheets are in `analysis/v22_pov/CONTACT_*.jpg` +
+  `STRIP_*.jpg`. Reference capture = cloud phone:
   `~/Downloads/2026_09_22_17_00_09.mp4` (854x480@33).
 
 - **The lost v20 source is RECONSTRUCTED and now lives in the repo.** The v20

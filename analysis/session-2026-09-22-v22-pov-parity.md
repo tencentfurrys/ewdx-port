@@ -1,16 +1,23 @@
 # Session 2026-09-22 (E) — v22 device verdict + POV interior comparison
 
+> **CORRECTION (same session, after owner pushback):** the "parity" verdict
+> below was measured on MIS-ALIGNED moments (the auto-detector latched onto
+> countdown screens and a door scene). With eyes on matched contact sheets:
+> the reference maw sphere shows the prey INSIDE (pink/red parts clearly
+> visible); the port draws the same porthole as a flat black disc + white
+> ring with NOTHING inside. The POV interior bug is REAL and still open.
+> Also: the reference capture is a CLOUD PHONE run, not a "web edition".
+> Session F continues with `~/Downloads/ewdx-v23-diag-maw.apk`
+> (EWDX_MAW_JOURNAL: buffer-5 draw journal + 80×80 pixel readback).
+
 Follows `session-2026-09-22-v22-rebuild-verify.md` (session D). Owner tested
 v22 in MuMu (logs: 65/65 runs `build v22-2026-09-22-flag4-decompile-anchor`,
 zero errors) and reported: **head attached, door seated — the flag&4 anchor
 fix is CONFIRMED on device.** Remaining report: "POV animation is the only
-thing still not showing, just like 2 parts."
-
-Evidence this session:
+thing still not showing, just like 2 parts."Evidence this session:
 - `~/Documents/MuMuSharedFolder/VideoRecords/EchidnaWarsDX(1..2).mp4`
   (960×540@30, v22) vs `~/Downloads/2026_09_22_17_00_09.mp4` (854×480@33,
-  the reference capture the owner supplied as "what it's supposed to look
-  like"). Tools: `analysis/v22_pov_compare.py` + `v22_pov_align.py`
+  the owner-supplied CLOUD PHONE reference capture — NOT a web edition). Tools: `analysis/v22_pov_compare.py` + `v22_pov_align.py`
   (swallow-aligned), images + `report.html` in `analysis/v22_pov/`.
 
 ## Verdict: POV interior on v22 = reference parity
