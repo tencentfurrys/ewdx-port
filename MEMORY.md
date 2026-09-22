@@ -6,8 +6,9 @@
 > Deeper context lives in `GUIDE.md` (how/why), `ewdx_ndk/README.md` (module map),
 > and `analysis/session-*.md` (per-day forensic logs).
 >
-> Last updated: **2026-09-22 (session C)** — v21 device-tested, head/door bug
-> diagnosed, v22 fix built (pending owner test).
+> Last updated: **2026-09-22 (session D)** — v22 rebuilt on the fresh machine,
+> verifier fixed to 144/144 (+ regression probe), and binary-verified against
+> the shipped v21 APK (one semantic float-op delta = the anchor fix).
 
 ## What this project is (30 seconds)
 
@@ -25,15 +26,22 @@ per `refs.md`.
   ("weird colors"). Cause: v20/v21 anchored the ctr_anchor branch at
   (dx−0.5, pivy−0.5) instead of the decompile's (pivx−0.5, pivy−0.5);
   the missing +dw/2 is a constant left-shift on every flag&4 part.
-- **v22 FIX BUILT (not yet owner-tested):**
-  `~/Downloads/ewdx-v22-decompile-anchor.apk`, tag
-  `v22-2026-09-22-flag4-decompile-anchor`. The ctr_anchor branch is now
+- **v22 FIX BUILT, REBUILT & BINARY-VERIFIED (session D, not yet owner-tested):**
+  `~/Downloads/ewdx-v22-decompile-anchor.apk` (56,803,945 B), tag
+  `v22-2026-09-22-flag4-decompile-anchor`. The ctr_anchor branch is
   verbatim from `analysis/decomp_inner.txt` (FUN_10001fa0): scale about
-  rect center, rotate, anchor (pivx−0.5, pivy−0.5). Plain branch
-  confirmed already-exact (a wrong edit to it was caught by the numerical
-  verifier `analysis/v22_pivot_verify.py` and reverted).
-- NEXT OWNER ACTION: install v22, check head/door/POV. v21 logs and the
-  4 MuMu videos are the baseline evidence (`analysis/v21_mumu/`,
+  rect center, rotate, anchor (pivx−0.5, pivy−0.5). Session D rebuilt it on
+  the fresh machine and ran `v21_bindiff.py` against the owner-shipped v21
+  APK: `ewdx_copy_flags` 707/707 ins with exactly ONE semantic float-op
+  delta (`ldr s2,[sp]`→`fmov #0.5; fsub`) = the anchor fix, nothing else;
+  all 593 game assets byte-identical. Plain branch now ALSO verbatim-
+  verified: session C's stale verifier test math is fixed
+  (`v22_pivot_verify.py` rewritten, 144/144 + a v21-regression probe that
+  asserts the old anchor MIS-matches — see
+  `analysis/session-2026-09-22-v22-rebuild-verify.md`).
+- NEXT OWNER ACTION: install v22, check head/door/POV. v21 (re-downloaded
+  from the owner's Mediafire link) and the 4 MuMu videos are the baseline
+  evidence (`analysis/v21_mumu/`,
   `analysis/session-2026-09-22-v22-head-door-pov.md`).
 
 - **The lost v20 source is RECONSTRUCTED and now lives in the repo.** The v20
@@ -96,7 +104,8 @@ per `refs.md`.
 |---|---|
 | `~/Downloads/2026_09_19_23_36_54.mp4` | 47.3 s capture of the WEB reference edition (maw ~0–16 s, stray line ~42.8–43.6 s) |
 | `~/Downloads/ewdx-v20-flag4-fix.apk` | The v20 binary (basis of the pivot reconstruction) |
-| `~/Downloads/ewdx-v21-pivot-recon.apk` | **NEW v21 build (this session)** |
+| `~/Downloads/ewdx-v21-pivot-recon.apk` | v21 build (re-downloaded from the owner's Mediafire link in session D; rollback baseline) |
+| `~/Downloads/ewdx-v22-decompile-anchor.apk` | **v22 build (rebuilt + verified session D)** |
 | `~/Downloads/20.zip` | 96 v20 boot logs |
 | `analysis/v21_dense/` | maw crops from the web capture (ground truth) |
 | `analysis/v21_tile_big.png` | the porthole mask tile, magnified |
@@ -182,3 +191,11 @@ Video tooling: ffmpeg NOT installed. Use Python `opencv-python-headless`
   v22_pivot_verify.py. APK: ~/Downloads/ewdx-v22-decompile-anchor.apk.
   NEXT: owner v22 test; finish verifier plain-case test math; then POV
   color re-check on v22.
+- 2026-09-22 (session D): fresh machine restored from scratch (deps at
+  pins, 593 assets re-staged from the Mediafire v21 APK,
+  local.properties). Verifier plain-case math fixed (both sides were
+  stale) → 144/144 + rest-placement pins + v21 regression probe. v22
+  rebuilt (2m44s) and shipped; bindiff vs shipped v21 libmain.so = ONE
+  semantic delta (the anchor fix), assets byte-identical. Session doc:
+  `analysis/session-2026-09-22-v22-rebuild-verify.md`. NEXT: owner v22
+  test (head/door/POV), then phone-parity run.
