@@ -6,16 +6,17 @@
 > Deeper context lives in `GUIDE.md` (how/why), `ewdx_ndk/README.md` (module map),
 > and `analysis/session-*.md` (per-day forensic logs).
 >
-> Last updated: **2026-09-23 (session F.2, v24.1 owner-tested)** —
-> **BLACK SQUARE GONE.** Owner screenshot 00:38: red stomach interior +
-> prey inside the zoomed POV porthole, scene continues to the ring.
-> Fix chain: v22 anchor → v24 glBlendFuncSeparate (mask carve + mode-0
-> alpha row) → v24.1 DGCOLOR &0xff truncation (staging clears
-> `0,0,0,256` = transparent black on D3D9). 41/41 new logs on tag
-> `v24.1-2026-09-23-clear-alpha256`, zero errors. Remaining (next):
-> residual near-black stomach wall, missing red flash, intestines should
-> MOVE — leads in `analysis/session-2026-09-23-v241-owner-test.md`
-> (unit(19) drift, fr=unit(12) frame advance, p_light refresh).
+> Last updated: **2026-09-23 (session F.3, v25)** — black square GONE
+> (v24.1 owner-confirmed). Remaining black + missing squirm/flash rooted
+> to the PRIMITIVE PATH stub (DGADDPRIMITIVE added one degenerate
+> vertex/quad → stomach wobble (part(19)==1 scanline primitives from
+> buffer 6), drop-shadows and view_blur all drew nothing). v25 rewrites
+> it: full DG-state snapshot per primitive + emit_quad expansion with
+> flag&2 dest semantics; blend at draw time (shadow sets mode 4 after
+> adding), color per-snapshot (flash recolor inside the loop).
+> Shipped `~/Downloads/ewdx-v25-prim-wobble.apk` (tag
+> v25-2026-09-23-prim-wobble, verified in libmain.so). Token from this
+> session is burned — owner must revoke (see Security notes).
 
 ## What this project is (30 seconds)
 

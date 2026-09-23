@@ -19,7 +19,7 @@
 
 // Bump per shipped build; journaled right after "=== run ===" so every
 // collected log positively identifies the binary that produced it.
-#define EWDX_BUILD_TAG "v24.1-2026-09-23-clear-alpha256"
+#define EWDX_BUILD_TAG "v25-2026-09-23-prim-wobble"
 
 #include <stdio.h>
 #include <stdlib.h>

@@ -443,33 +443,62 @@ int ewdx_loadmemory_png(const void *png, int size, int slot) {
     return -1;
 }
 
-// --- primitive path (effects only; immediate draw, same program) ---
-static EwdxVert prims[64];
+// --- primitive path (effects + the stomach/mouth wobble) ---
+// v25 rewrite. The old stub appended ONE degenerate vertex per
+// DGADDPRIMITIVE (uv 0,0, no size) and fanned them — the stomach wobble
+// blocks add one primitive PER 1px SCANLINE (repeat part(5,...) with
+// DGRECT src row + DGSCALEANDANGLE = dest width in px + DGPOS row pos), so
+// it produced nothing: the wobbled wall/intestine parts (part(19)==1,
+// drawn FROM buffer 6) rendered empty = the residual black interior +
+// missing squirm/flash after v24.1.
+// hmm.dll semantics (D3D9): DGADDPRIMITIVE records a QUAD from the current
+// DG state (D3DPT_TRIANGLEFAN, 4 verts/quad, primCount = quads); scale is
+// flag&2-style (dest dims = raw DGSCALEANDANGLE px, not 8.8). We snapshot
+// the state per call and expand to 6 verts at draw time via emit_quad.
+typedef struct {
+    int posx, posy, rx, ry, rw, rh;
+    float scx, scy;   // raw 8.8 as set by DGSCALEANDANGLE
+    unsigned ang;
+    int r, g, b, a;
+} EwdxPrim;
+#define EWDX_MAX_PRIMS 512   // wobble loops: one per scanline, up to 256 rows
+static EwdxPrim prims[EWDX_MAX_PRIMS];
 static int prim_n = 0;
 
 int ewdx_createprim(int n) { (void)n; prim_n = 0; return -1; }
 
 int ewdx_addprim(void) {
-    if (prim_n >= 64) return 0;
-    EwdxVert *v = &prims[prim_n++];
-    int tgtW = (ewdx.target == 0) ? ewdx.scr_w : ewdx.buf[ewdx.target].w;
-    int tgtH = (ewdx.target == 0) ? ewdx.scr_h : ewdx.buf[ewdx.target].h;
-    v->x = ((float)m_posx) / tgtW * 2.0f - K_ONE;
-    v->y = K_ONE - ((float)m_posy) / tgtH * 2.0f;
-    v->u = 0.0f; v->v = 0.0f;
-    v->r = ewdx.st.r / 255.0f; v->g = ewdx.st.g / 255.0f;
-    v->b = ewdx.st.b / 255.0f; v->a = ewdx.st.a / 255.0f;
+    if (prim_n >= EWDX_MAX_PRIMS) return 0;
+    EwdxPrim *q = &prims[prim_n++];
+    q->posx = m_posx; q->posy = m_posy;
+    q->rx = m_rx; q->ry = m_ry; q->rw = m_rw; q->rh = m_rh;
+    q->scx = m_scx; q->scy = m_scy; q->ang = m_ang;
+    q->r = ewdx.st.r; q->g = ewdx.st.g; q->b = ewdx.st.b; q->a = ewdx.st.a;
     return -1;
 }
 
 int ewdx_drawprim(void) {
-    if (prim_n < 3 || m_primTex < 0 || m_primTex >= EWDX_MAX_BUFFERS) { prim_n = 0; return 0; }
+    if (prim_n < 1 || m_primTex < 0 || m_primTex >= EWDX_MAX_BUFFERS) { prim_n = 0; return 0; }
     EwdxBuffer *t = &ewdx.buf[m_primTex];
     if (!t->valid) { prim_n = 0; return 0; }
+    int tgtW = (ewdx.target == 0) ? ewdx.scr_w : ewdx.buf[ewdx.target].w;
+    int tgtH = (ewdx.target == 0) ? ewdx.scr_h : ewdx.buf[ewdx.target].h;
+    (void)tgtW; (void)tgtH;  // emit_quad reads ewdx.target itself
+    for (int i = 0; i < prim_n; i++) {
+        EwdxPrim *q = &prims[i];
+        float dw = (float)q->rw, dh = (float)q->rh;
+        if (dw <= 0 || dh <= 0) continue;
+        // flag&2 dest semantics: dest dims = raw DGSCALEANDANGLE px
+        float scx = q->scx / dw, scy = q->scy / dh;
+        run_check((int)t->tex);
+        emit_quad(t->tex, t->w, t->h, t->vflip,
+                  (float)q->posx, (float)q->posy, dw, dh,
+                  (float)q->rx, (float)q->ry, dw, dh, scx, scy, q->ang,
+                  q->r / 255.0f, q->g / 255.0f, q->b / 255.0f, q->a / 255.0f,
+                  0, 0, 0);
+        if (batch_quads >= EWDX_BATCH_QUADS) ewdx_flush();
+    }
     ewdx_flush();
-    bind_run((int)t->tex);
-    glBufferData(GL_ARRAY_BUFFER, prim_n * sizeof(EwdxVert), prims, GL_DYNAMIC_DRAW);
-    glDrawArrays(GL_TRIANGLE_FAN, 0, prim_n);  // orig uses fan (D3DPT_TRIANGLEFAN=6)
     prim_n = 0;
     return -1;
 }
