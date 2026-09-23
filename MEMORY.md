@@ -6,18 +6,16 @@
 > Deeper context lives in `GUIDE.md` (how/why), `ewdx_ndk/README.md` (module map),
 > and `analysis/session-*.md` (per-day forensic logs).
 >
-> Last updated: **2026-09-23 (session F, v24.1)** — the v24 alpha-carve
-> fix was necessary but NOT sufficient: owner's v24 test still showed the
-> black square. REAL root cause found by size-mismatch forensics: the
-> square is NOT the 80×80 buffer-5 composite — it's the ~290px ZOOMED
-> staging chain (mouth art → buffer 6 → scaled into buffer 5), and the
-> script clears those staging buffers with `DGCOLOR 0,0,0,256` — alpha
-> 256 TRUNCATES to 0 in D3D9's 32-bit D3DCOLOR (born-transparent black),
-> but the port clamped 256→opaque. 15 clear sites, all alpha-256.
-> Fix: ewdx_color masks &0xff (hardware truncation parity).
-> Shipped `~/Downloads/ewdx-v241-clear-alpha256.apk` (tag
-> v24.1-2026-09-23-clear-alpha256). Old logs archived to
-> MuMuSharedFolder/Download/archive_20260922_pre_v241/ (126 files).
+> Last updated: **2026-09-23 (session F.2, v24.1 owner-tested)** —
+> **BLACK SQUARE GONE.** Owner screenshot 00:38: red stomach interior +
+> prey inside the zoomed POV porthole, scene continues to the ring.
+> Fix chain: v22 anchor → v24 glBlendFuncSeparate (mask carve + mode-0
+> alpha row) → v24.1 DGCOLOR &0xff truncation (staging clears
+> `0,0,0,256` = transparent black on D3D9). 41/41 new logs on tag
+> `v24.1-2026-09-23-clear-alpha256`, zero errors. Remaining (next):
+> residual near-black stomach wall, missing red flash, intestines should
+> MOVE — leads in `analysis/session-2026-09-23-v241-owner-test.md`
+> (unit(19) drift, fr=unit(12) frame advance, p_light refresh).
 
 ## What this project is (30 seconds)
 
@@ -48,23 +46,11 @@ per `refs.md`.
   (`v22_pivot_verify.py` rewritten, 144/144 + a v21-regression probe that
   asserts the old anchor MIS-matches — see
   `analysis/session-2026-09-22-v22-rebuild-verify.md`).
-- v24.1 NEXT OWNER ACTION: install `~/Downloads/ewdx-v241-clear-alpha256.apk`
-  and re-test the vore POV — the ~290px black square behind the ring
-  should be GONE (staging clears now born-transparent like D3D), scene
-  visible up to the ring, interior unchanged. Evidence chain for the real
-  root cause: v24 test (61 logs on tag v24-…-maw-alpha-carve, journal
-  off, square STILL present) + screenshot size math (square ≈300 game px
-  ≠ 80 px composite) + v23 journal draw scan (id=6 256×256 → buffer 5
-  scaled 287→394px = the zoom animation) + keyed asset previews
-  (`analysis/v24_blackbox/`: stom_s ring art has transparent surround;
-  stom1/stom2 = prey-part atlases). D3DCOLOR truncation: DGCOLOR alpha
-  256 → 0 on D3D9 (all 15 script clear sites use it); port clamped 256
-  → opaque 1.0 — ewdx_color now masks &0xff.
-  The v24 mode-0/glBlendFuncSeparate change stays (still required:
-  without it the mask corners would paint over the scene even with a
-  clean clear). Session-E "parity" verdict stays retracted.
-  Reference capture = cloud phone:
-  `~/Downloads/2026_09_22_17_00_09.mp4` (854x480@33).
+- NEXT: interior animation — see
+  `analysis/session-2026-09-23-v241-owner-test.md` (leads: unit(19)
+  drift tick, `fr = unit(12, pn)` frame advance for stom_n, p_light
+  refresh/flash). Logs: current era = MuMuSharedFolder/Download root
+  (41× v24.1); pre-v24.1 archived in `archive_20260922_pre_v241/`.
 
 - **The lost v20 source is RECONSTRUCTED and now lives in the repo.** The v20
   "flag4 pivot fix" was recovered by normalized instruction diff of HEAD vs the
