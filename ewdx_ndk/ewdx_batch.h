@@ -39,7 +39,7 @@ int ewdx_loadmemory_png(const void *png, int size, int slot); // PNG-renamed .bm
 
 // Primitive path (best-effort; 13 ADD/DRAW pairs in script, effects only)
 int ewdx_createprim(int n);                    // DGCREATEPRIMITIVE
-int ewdx_addprim(void);                        // DGADDPRIMITIVE (uses pos/color/tex state)
+int ewdx_addprim(unsigned flags);              // DGADDPRIMITIVE: arg = DGGCOPY flag word
 int ewdx_drawprim(void);                       // DGDRAWPRIMITIVE (immediate flush)
 
 // Text (SDL_ttf string cache in ewdx_text.cpp; always -1, menus non-fatal)

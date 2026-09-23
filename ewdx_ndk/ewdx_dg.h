@@ -28,7 +28,7 @@ int dg_copyf(int id, int flags);                // DGGCOPY with mirror/center
 int dg_texture(int id);                         // DGTEXTURE
 int dg_loadmem(const void *b, int s, int n);    // DGLOADMEMORY (b=BMP bytes, s=size, n=slot)
 int dg_createprim(int n);                       // DGCREATEPRIMITIVE
-int dg_addprim(void);                           // DGADDPRIMITIVE
+int dg_addprim(unsigned flags);                 // DGADDPRIMITIVE: arg = DGGCOPY flag word
 int dg_drawprim(void);                          // DGDRAWPRIMITIVE
 int dg_font(const char *n, int s);              // DGFONT (SDL_ttf string cache)
 int dg_drawtext(const char *s, int x, int y);   // DGDRAWTEXT (immediate quad)

@@ -41,7 +41,7 @@ int dg_copyf(int id, int flags)                   { return ewdx_copy_flags(id, f
 int dg_texture(int id)                            { return ewdx_texture(id); }
 int dg_loadmem(const void *b, int s, int n)       { return ewdx_loadmemory(b, s, n); }
 int dg_createprim(int n)                          { return ewdx_createprim(n); }
-int dg_addprim(void)                              { return ewdx_addprim(); }
+int dg_addprim(unsigned flags)                    { return ewdx_addprim(flags); }
 int dg_drawprim(void)                             { return ewdx_drawprim(); }
 int dg_font(const char *n, int s)                 { return ewdx_font(n, s); }
 int dg_drawtext(const char *s, int x, int y)      { return ewdx_drawtext(s, x, y); }

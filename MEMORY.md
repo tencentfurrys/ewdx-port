@@ -14,9 +14,11 @@
 > it: full DG-state snapshot per primitive + emit_quad expansion with
 > flag&2 dest semantics; blend at draw time (shadow sets mode 4 after
 > adding), color per-snapshot (flash recolor inside the loop).
-> Shipped `~/Downloads/ewdx-v25-prim-wobble.apk` (tag
-> v25-2026-09-23-prim-wobble, verified in libmain.so). Token from this
-> session is burned — owner must revoke (see Security notes).
+> Shipped `~/Downloads/ewdx-v251-prim-flags.apk` (v25.1: the
+> DGADDPRIMITIVE arg is the DGGCOPY flag word — centered scanlines +
+> guarded menu tiling; v25 drew them flag-0 = half-row shift + the white
+> row wall on menus). Token from this session is burned — owner must
+> revoke (see Security notes).
 
 ## What this project is (30 seconds)
 

@@ -460,6 +460,8 @@ typedef struct {
     float scx, scy;   // raw 8.8 as set by DGSCALEANDANGLE
     unsigned ang;
     int r, g, b, a;
+    unsigned flags;   // v25.1: the DGADDPRIMITIVE arg = DGGCOPY flag word
+                      // (7 = center+rect-scale+ctr-anchor, +8 uflip, +0x10 vflip)
 } EwdxPrim;
 #define EWDX_MAX_PRIMS 512   // wobble loops: one per scanline, up to 256 rows
 static EwdxPrim prims[EWDX_MAX_PRIMS];
@@ -467,13 +469,14 @@ static int prim_n = 0;
 
 int ewdx_createprim(int n) { (void)n; prim_n = 0; return -1; }
 
-int ewdx_addprim(void) {
+int ewdx_addprim(unsigned flags) {
     if (prim_n >= EWDX_MAX_PRIMS) return 0;
     EwdxPrim *q = &prims[prim_n++];
     q->posx = m_posx; q->posy = m_posy;
     q->rx = m_rx; q->ry = m_ry; q->rw = m_rw; q->rh = m_rh;
     q->scx = m_scx; q->scy = m_scy; q->ang = m_ang;
     q->r = ewdx.st.r; q->g = ewdx.st.g; q->b = ewdx.st.b; q->a = ewdx.st.a;
+    q->flags = flags;
     return -1;
 }
 
@@ -488,14 +491,21 @@ int ewdx_drawprim(void) {
         EwdxPrim *q = &prims[i];
         float dw = (float)q->rw, dh = (float)q->rh;
         if (dw <= 0 || dh <= 0) continue;
+        float dx = (float)q->posx, dy = (float)q->posy;
+        if (q->flags & 1) {  // centered: DGPOS is the quad CENTER
+            dx -= dw * K_HALF;
+            dy -= dh * K_HALF;
+        }
         // flag&2 dest semantics: dest dims = raw DGSCALEANDANGLE px
-        float scx = q->scx / dw, scy = q->scy / dh;
+        float scx = (q->flags & 2) ? (q->scx / dw) : (q->scx * (1.0f / 256.0f));
+        float scy = (q->flags & 2) ? (q->scy / dh) : (q->scy * (1.0f / 256.0f));
         run_check((int)t->tex);
         emit_quad(t->tex, t->w, t->h, t->vflip,
-                  (float)q->posx, (float)q->posy, dw, dh,
+                  dx, dy, dw, dh,
                   (float)q->rx, (float)q->ry, dw, dh, scx, scy, q->ang,
                   q->r / 255.0f, q->g / 255.0f, q->b / 255.0f, q->a / 255.0f,
-                  0, 0, 0);
+                  (q->flags & 8) != 0, (q->flags & 0x10) != 0,
+                  (q->flags & 4) != 0);
         if (batch_quads >= EWDX_BATCH_QUADS) ewdx_flush();
     }
     ewdx_flush();

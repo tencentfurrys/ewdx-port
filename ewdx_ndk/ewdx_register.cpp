@@ -805,8 +805,13 @@ static int rc_cmdfunc_dllcmd(int cmd) {
         return rc_stat(dg_drawtext(s, x, y));
     }
     case EWDX_DGADDPRIM: {
-        code_getdi(0); code_getdi(0); code_getdi(0); code_getdi(0);
-        return rc_stat(dg_addprim());
+        // v25.1: the declared int arg is the DGGCOPY flag word (7=centered
+        // +rect-scale+ctr-anchor, +8 uflip, +0x10 vflip) — the wobble scanline
+        // and menu-tiling loops rely on it (centered scanlines, guarded tile
+        // grids). Used to be discarded here.
+        unsigned pf = (unsigned)code_getdi(0);
+        code_getdi(0); code_getdi(0); code_getdi(0);
+        return rc_stat(dg_addprim(pf));
     }
     case EWDX_DGDRAWPRIM: {
         code_getdi(0); code_getdi(0); code_getdi(0); code_getdi(0);

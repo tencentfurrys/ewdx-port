@@ -51,3 +51,26 @@ libmain.so.
    shadow looks wrong (they were invisible since v1).
 3. Regression watch: `DGCREATEPRIMITIVE` sites (title/gallery `infdraw_op`
    blocks) — any new garbage there is the prim path over-drawing.
+
+## 25.1 follow-up (owner test of v25, same day)
+
+Owner: POV improving ("one intestine moving" — wall now renders), but a
+**wall of white rows** appeared on a menu screen (video 4 ~14 s). Cause:
+v25 discarded `DGADDPRIMITIVE`'s int argument. The script declares it and
+always passes the **DGGCOPY flag word**: `7` (centered + rect-scale +
+ctr-anchor) in the wobble scanline loops, `7 + 8*flip` for mirrored menu
+tiles, `7 + 16*flip` variants, and `infdraw_op = 7 + 8*prm_406(6,sd)` in
+the `infdraw` infinite-scroll tiling (L2875-2967) — whose per-tile
+bounds-guards (break/continue on x/y) only make sense for CENTERED
+tiles. v25 drew everything as uncentered flag-0: scanlines shifted half
+a row; menu tiles shifted and spilled past the guards = the white rows.
+
+Fix (v25.1): thread the flag word through register glue →
+`dg_addprim(unsigned)` → `EwdxPrim.flags`, honored in `ewdx_drawprim`
+(same flag semantics as `ewdx_copy_flags`: &1 center, &2 rect-scale,
+&4 ctr_anchor, &8 uflip, &0x10 vflip). Cap stays 512.
+
+Shipped `~/Downloads/ewdx-v251-prim-flags.apk` (57,412,113 B), tag
+`v25.1-2026-09-23-prim-flags` verified in libmain.so.
+Evidence: `analysis/v25_evidence/` (contact sheets of videos 3+4,
+screenshot 01:06).
