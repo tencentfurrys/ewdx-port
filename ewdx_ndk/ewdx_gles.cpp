@@ -40,13 +40,27 @@ static GLuint compile_shader(GLenum type, const char *src) {
     glShaderSource(s, 1, &src, NULL);
     glCompileShader(s);
     return s;
-}
-
-// mode -> (src, dst) recovered from hmm.dll FUN_10001d70:
+}// mode -> (rgbSrc, rgbDst, aSrc, aDst) recovered from hmm.dll FUN_10001d70:
 //   SetRenderState(D3DRS_SRCBLEND=0x13, X) + SetRenderState(D3DRS_DESTBLEND=0x14, Y)
 //   D3DBLEND: ZERO=1 ONE=2 SRCCOLOR=3 INVSRCCOLOR=4 SRCALPHA=5 INVSRCALPHA=6
 //             DESTCOLOR=9 INVDESTCOLOR=10
-static const GLenum BLEND_SRC[8] = {
+// D3D9 blends all four channels with color factors (INVSRCCOLOR's alpha row is
+// 1-src.a); D3D9 defaults leave D3DRS_SEPARATEALPHABLENDENABLE off, and hmm.dll
+// never touches SRCBLENDALPHA/DESTBLENDALPHA. GLES2 forbids color factors on
+// the alpha unit, so each mode gets a separate legal alpha row (v24):
+//   0 (COPY): rgb ONE/ZERO, alpha ONE/INVSRCALPHA. Alpha-respecting opaque
+//     replace — the maw composite's final DGGCOPY 5,1 must NOT paint the
+//     mask-carved transparent corners over the scene (ref video: scene shows
+//     through the corners). Byte-identical to ONE/ZERO for opaque sources.
+//   3 (SUB): rgb ZERO/INVSRCOLOR, alpha ZERO/INVSRCALPHA (D3D: 1-src.a). The
+//     vore mask (4 mirrored system.bmp tiles) must carve corner ALPHA to 0 —
+//     v23 evidence: glBlendFunc sent ONE_MINUS_SRC_COLOR to the alpha unit
+//     (illegal in GLES2, silently ignored on MuMu's shim) so corners stayed
+//     A=255 and the final copy painted the black box. Transparent (A=0)
+//     mask-hole pixels leave dst alpha untouched.
+//   4 (MUL): alpha row ZERO/INVSRCALPHA mirrors mode 3's D3D alpha row.
+//   5 (SCR): alpha ONE/ZERO mirrors mode 0's D3D alpha row.
+static const GLenum BLEND_RGB_SRC[8] = {
     GL_ONE,                // 0: SRC=ONE(2)
     GL_SRC_ALPHA,          // 1: SRC=SRCALPHA(5)
     GL_SRC_ALPHA,          // 2: SRC=SRCALPHA(5)
@@ -56,7 +70,7 @@ static const GLenum BLEND_SRC[8] = {
     GL_ONE,                // 6: SRC=ONE(2)
     GL_DST_COLOR           // 7: SRC=DESTCOLOR(9)
 };
-static const GLenum BLEND_DST[8] = {
+static const GLenum BLEND_RGB_DST[8] = {
     GL_ZERO,                    // 0: DST=ZERO(1)
     GL_ONE_MINUS_SRC_ALPHA,     // 1: DST=INVSRCALPHA(6)
     GL_ONE,                     // 2: DST=ONE(2)
@@ -64,7 +78,27 @@ static const GLenum BLEND_DST[8] = {
     GL_SRC_COLOR,               // 4: DST=SRCCOLOR(3)
     GL_ZERO,                    // 5: DST=ZERO(1)
     GL_ONE,                     // 6: DST=ONE(2)
-    GL_ONE                       // 7: DST=ONE(2)
+    GL_ONE                      // 7: DST=ONE(2)
+};
+static const GLenum BLEND_A_SRC[8] = {
+    GL_ONE,                     // 0: ONE's alpha row = 1 (replace)
+    GL_SRC_ALPHA,               // 1: SRCALPHA's alpha row = src.a
+    GL_SRC_ALPHA,               // 2: SRCALPHA's alpha row = src.a
+    GL_ZERO,                    // 3: ZERO's alpha row = 0 (v24 carve fix)
+    GL_ZERO,                    // 4: ZERO's alpha row = 0
+    GL_ONE_MINUS_DST_ALPHA,     // 5: INVDESTCOLOR's alpha row = 1-dst.a
+    GL_ONE,                     // 6: ONE's alpha row = 1
+    GL_DST_ALPHA                // 7: DESTCOLOR's alpha row = dst.a
+};
+static const GLenum BLEND_A_DST[8] = {
+    GL_ONE_MINUS_SRC_ALPHA,     // 0: INVSRCALPHA (v24: scene through carved corners)
+    GL_ONE_MINUS_SRC_ALPHA,     // 1: INVSRCALPHA
+    GL_ONE,                     // 2: ONE
+    GL_ONE_MINUS_SRC_ALPHA,     // 3: INVSRCALPHA = 1-src.a (v24 carve fix)
+    GL_SRC_ALPHA,               // 4: SRCCOLOR = src.a
+    GL_ZERO,                    // 5: ZERO
+    GL_ONE,                     // 6: ONE
+    GL_ONE                      // 7: ONE
 };
 
 int ewdx_init(void) {
@@ -231,6 +265,17 @@ int ewdx_buffer(int id, int w, int h) {
 
 int ewdx_select(int id) {
     if (id < 0 || id >= EWDX_MAX_BUFFERS || !ewdx.buf[id].valid) {
+#ifdef EWDX_MAW_JOURNAL
+        // Session E/F: a failed DGGSEL used to vanish silently — if buffer 5
+        // was ever invalid at vore time, the whole porthole composite would
+        // land on the WRONG target and nobody would know. Log it.
+        {
+            char msg[96];
+            snprintf(msg, sizeof(msg), "[maw] DGGSEL %d FAILED (valid=%d)",
+                     id, (id >= 0 && id < EWDX_MAX_BUFFERS) ? ewdx.buf[id].valid : -1);
+            ewdx_boot_journal(msg);
+        }
+#endif
         if (id != 0) return 0;
     }
     if (id != ewdx.target) ewdx_flush();  // queued quads belong to the old FBO
@@ -312,7 +357,12 @@ int ewdx_apply_blend(int mode) {
     if (mode < 0 || mode > 7) mode = EWDX_BLEND_ALPHA;
     if (mode != ewdx.st.blend) ewdx_flush();  // pending quads use the old factors
     ewdx.st.blend = mode;
-    glBlendFunc(BLEND_SRC[mode], BLEND_DST[mode]);
+    // v24: separate alpha factors — D3D9 blends RGB+alpha with the same
+    // color-factor rows (no SEPARATEALPHABLEND in hmm.dll), and GLES2 rejects
+    // color factors on the alpha unit. glBlendFunc(BLEND_*[3]) silently broke
+    // the alpha half of modes 0/3/4/5 (maw black-box bug).
+    glBlendFuncSeparate(BLEND_RGB_SRC[mode], BLEND_RGB_DST[mode],
+                        BLEND_A_SRC[mode], BLEND_A_DST[mode]);
     return -1;
 }
 

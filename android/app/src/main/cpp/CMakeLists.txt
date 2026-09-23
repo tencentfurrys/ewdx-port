@@ -107,8 +107,9 @@ target_compile_definitions(ewdx PUBLIC HSP64)
 # target_compile_definitions(ewdx PUBLIC EWDX_DGCOPY_JOURNAL)
 # Session E POV diagnostics (v23-diag build): journal buffer-5 (stomach
 # porthole) draws + pixel readback at each maw composite. Rare event, safe
-# for a short repro run. COMMENT OUT for normal gameplay builds.
-target_compile_definitions(ewdx PUBLIC EWDX_MAW_JOURNAL)
+# for a short repro run. v24 carries the FIX (blend alpha carve), journal
+# OFF for normal gameplay.
+# target_compile_definitions(ewdx PUBLIC EWDX_MAW_JOURNAL)
 target_include_directories(ewdx PUBLIC
     "../../../../../ewdx_ndk"
     "../../../../../../SDL_ttf"

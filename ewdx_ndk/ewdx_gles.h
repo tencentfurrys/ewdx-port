@@ -15,11 +15,11 @@
 // Blend modes 0..7 as dispatched by hmm.dll FUN_10001d70.
 // Game script uses 0..4 (+ per-frame values from .mot part(13,*) data).
 typedef enum {
-    EWDX_BLEND_COPY = 0,   // SRC=ONE, DST=ZERO        (opaque)
+    EWDX_BLEND_COPY = 0,   // rgb ONE/ZERO, alpha ONE/INVSRCALPHA (v24: alpha-respecting replace)
     EWDX_BLEND_ALPHA = 1,  // SRC=SRCALPHA, DST=INVSRCALPHA (normal alpha)
     EWDX_BLEND_ADD = 2,    // SRC=SRCALPHA, DST=ONE     (additive)
-    EWDX_BLEND_SUB = 3,    // SRC=ZERO, DST=INVSRCCOLOR (darken)
-    EWDX_BLEND_MUL = 4,    // SRC=ZERO, DST=SRCCOLOR    (multiply)
+    EWDX_BLEND_SUB = 3,    // rgb ZERO/INVSRCCOLOR, alpha ZERO/INVSRCALPHA (v24 carve)
+    EWDX_BLEND_MUL = 4,    // rgb ZERO/SRCCOLOR, alpha ZERO/SRCALPHA
     EWDX_BLEND_SCR = 5,    // SRC=INVDESTCOLOR, DST=ZERO
     EWDX_BLEND_ADD2 = 6,   // SRC=ONE, DST=ONE
     EWDX_BLEND_DSTC = 7    // SRC=DESTCOLOR, DST=ONE

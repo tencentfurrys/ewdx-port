@@ -6,13 +6,15 @@
 > Deeper context lives in `GUIDE.md` (how/why), `ewdx_ndk/README.md` (module map),
 > and `analysis/session-*.md` (per-day forensic logs).
 >
-> Last updated: **2026-09-22 (session E, corrected)** — v22 device-CONFIRMED
-> (head/door fixed). POV interior bug is REAL (session E first verdict of
-> "parity" was wrong: auto-alignment matched the wrong moments; with eyes on
-> matched frames, the ref maw shows the prey inside, the port's porthole is
-> empty black). v23-diag build shipped: `~/Downloads/ewdx-v23-diag-maw.apk`
-> (EWDX_MAW_JOURNAL: buffer-5 draw log + pixel readback, one run decides
-> VM-side vs render-side). Reference capture = CLOUD PHONE, not web.
+> Last updated: **2026-09-22 (session F)** — v23-diag ANSWERED: the maw
+> interior DOES render (prey body visible in the porthole), but it ships
+> with an opaque black 80×80 square — the mask's corner alpha-carve never
+> happened. Root cause proven: GLES2 forbids color factors as ALPHA
+> factors, so `glBlendFunc` silently dropped the alpha half of modes
+> 0/3/4/5 (v23 readback: 182/182 composites 100% opaque). v24 fix built
+> & shipped: `~/Downloads/ewdx-v24-maw-alpha-carve.apk`
+> (glBlendFuncSeparate, D3D-exact alpha rows, mode 0 alpha-respecting).
+> Reference capture = CLOUD PHONE, not web.
 
 ## What this project is (30 seconds)
 
@@ -43,14 +45,19 @@ per `refs.md`.
   (`v22_pivot_verify.py` rewritten, 144/144 + a v21-regression probe that
   asserts the old anchor MIS-matches — see
   `analysis/session-2026-09-22-v22-rebuild-verify.md`).
-- NEXT OWNER ACTION: run `~/Downloads/ewdx-v23-diag-maw.apk`, trigger ONE
-  swallow, send the new boot log. `[maw]` lines decide: interior draws
-  missing/alpha-tiny = VM-side (script state/p_light), draws present but
-  readback black = render-side (mask/blend/buffer path). Until then do NOT
-  trust the session-E "parity" section below (see its CORRECTION header);
-  matched contact sheets are in `analysis/v22_pov/CONTACT_*.jpg` +
-  `STRIP_*.jpg`. Reference capture = cloud phone:
-  `~/Downloads/2026_09_22_17_00_09.mp4` (854x480@33).
+- v24 NEXT OWNER ACTION: install `~/Downloads/ewdx-v24-maw-alpha-carve.apk`
+  and re-test the vore POV — corners should now show the scene (no black
+  square), interior behavior unchanged. Session-F evidence chain: owner
+  v23-diag run (MuMu screenshots 22:47–22:49 + 31 log rotations) → prey
+  body IS inside the porthole, corners opaque black; `[maw]` readback
+  182/182 "nontransparent=100%" = the mask's alpha carve never landed;
+  GLES2 alpha-factor illegality is the only mechanism consistent with
+  the RGB invert working while alpha stays 255. Corner crops:
+  `analysis/v22_pov/corners_big.jpg`, `corners_ref_vs_mumu.jpg`,
+  `mumu_full.jpg`.
+  Until v24 is owner-confirmed, the session-E "parity" section below
+  stays retracted (see its CORRECTION header). Reference capture = cloud
+  phone: `~/Downloads/2026_09_22_17_00_09.mp4` (854x480@33).
 
 - **The lost v20 source is RECONSTRUCTED and now lives in the repo.** The v20
   "flag4 pivot fix" was recovered by normalized instruction diff of HEAD vs the
@@ -67,12 +74,32 @@ per `refs.md`.
   reconstructed pivot fix (identical code), `debag_mode` force-0 at VM start,
   compile-gated `[dgline]` journal (off by default), boot journal lines
   recording the fix provenance.
-- Blend modes 3/4: **NOT swapped — do not change them.** See "Open bugs" #1.
+- Blend modes 3/4 RGB rows: **NOT swapped** (v20 pixel ground truth
+  stands). v24 DID restructure the table: `glBlendFuncSeparate` with
+  D3D-exact alpha rows + alpha-respecting mode 0 — see "Open bugs" #1.
 
 ## Open bugs (REVISED 2026-09-22 — read before "fixing" anything)
 
-1. **POV/maw "black box + faint pink" — VERDICT: matches the reference.**
-   The triage doc's blend-3/4-swap hypothesis is REFUTED by pixels:
+1. **POV/maw black box — FIXED in v24 (owner test pending).**
+   - Still true: blend 3/4 are NOT swapped; the mask tile is white outside
+     the disc, transparent inside (v20 ground truth).
+   - What the v20 verdict missed: D3D9 blends ALPHA with the same color
+     factors (hmm.dll never enables SEPARATEALPHABLEND). The invert mask
+     (mode 3) must ALSO carve corner alpha to 0, and the final mode-0
+     copy must NOT paint opaque over those corners (ref video: scene
+     visible through the corners). GLES2 rejects ONE_MINUS_SRC_COLOR as
+     an alpha factor → `glBlendFunc` silently dropped every alpha half →
+     corners stayed A=255 → opaque black box (v23 readback: 182/182
+     nontransparent=100%). GUIDE.md's mode-0 (ONE,ZERO) recovery is
+     likewise corrected: D3D-verbatim 4-channel math gives a
+     ONE/INVSRCALPHA alpha row — byte-identical for opaque art and the
+     only reading consistent with the reference.
+   - Fix (ewdx_gles.cpp, v24): BLEND_RGB_* rows unchanged + new
+     BLEND_A_SRC/A_DST rows mirroring D3D's 4-channel factors, applied
+     via `glBlendFuncSeparate`. Every script mode-0 draw is alpha-255, so
+     no other scene can change.
+   - Historical (pre-v24 verdict, superseded): "matches the reference".
+     The triage doc's blend-3/4-swap hypothesis is still REFUTED by pixels:
    - Ground truth tile (`analysis/v21_facts.py`, `v21_tile_big.png`):
      `system.bmp (242,72,40,40)` is **WHITE OUTSIDE the disc radius,
      transparent INSIDE** (a porthole mask) — the triage doc had the
@@ -214,4 +241,19 @@ Video tooling: ffmpeg NOT installed. Use Python `opencv-python-headless`
   by +8 s); verdict = reference parity, no port bug. mumu1's long dark
   disc = a door/room scene, not a stuck POV. Evidence:
   `analysis/v22_pov/` (report.html + sheets), doc:
-  `analysis/session-2026-09-22-v22-pov-parity.md`.
+  `analysis/session-2026-09-22-v22-pov-parity.md`. [LATER CORRECTED in
+  session F: verdict was measured on mis-aligned moments — the port's
+  porthole was genuinely broken; see session F.]
+- 2026-09-22 (session F): v23-diag owner run (screenshots + 31 log
+  rotations) → prey body renders INSIDE the porthole, but corners are an
+  opaque black square; `[maw]` readback 182/182 nontransparent=100%.
+  Root cause: GLES2 forbids color factors as alpha factors —
+  glBlendFunc silently dropped the alpha half of modes 0/3/4/5, so the
+  mask's corner alpha-carve never landed and mode 0 painted the corners
+  opaque. v24 fix: glBlendFuncSeparate + D3D-exact alpha rows +
+  alpha-respecting mode 0 (all script mode-0 draws are alpha-255 → no
+  other scene changes). Built + shipped
+  `~/Downloads/ewdx-v24-maw-alpha-carve.apk` (tag
+  v24-2026-09-22-maw-alpha-carve verified in libmain.so). NEXT: owner
+  v24 test (corners scene-through, interior unchanged); revert the v23
+  journal comment block only if a new diag is ever needed.

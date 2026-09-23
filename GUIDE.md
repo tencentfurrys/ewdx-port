@@ -149,7 +149,13 @@ All exports are thunks `FUN_*(…,&DAT_10092cc8,…)`; return `-1` ok / `0` fail
   `0x13`=SRCBLEND/`0x14`=DESTBLEND. Modes →
   0:(ONE,ZERO) 1:(SRCALPHA,INVSRCALPHA) 2:(SRCALPHA,ONE) 3:(ZERO,INVSRCCOLOR)
   4:(ZERO,SRCCOLOR) 5:(INVDESTCOLOR,ZERO) 6:(ONE,ONE) 7:(DESTCOLOR,ONE).
-  Script uses 0–4. → `glBlendFunc` table in `ewdx_gles.cpp`.
+  Script uses 0–4. → `glBlendFuncSeparate` table in `ewdx_gles.cpp` (v24):
+  the RGB rows above + D3D-exact ALPHA rows (D3D9 blends alpha with the
+  same color factors unless SEPARATEALPHABLEND is on — hmm.dll never
+  enables it; GLES2 cannot, so the alpha rows are carried separately:
+  0:(ONE,INVSRCALPHA) 3:(ZERO,INVSRCALPHA) 4:(ZERO,SRCALPHA)
+  5:(INVDESTALPHA,ZERO)). Plain glBlendFunc silently dropped the alpha
+  half = the vore-mask black-box bug (session F).
 - `FUN_10002460` (scale/angle): scale float, **angle &= 0xff** (256-step LUT).
 - `FUN_10001fa0` (copy): 4-vert TRIANGLEFAN, stride 0x1c (XYZRHW|DIFFUSE|TEX1),
   rotate-about-center via LUT @ctx+`0xeec`/`0xfec`, scale÷256, 0.5 offsets,

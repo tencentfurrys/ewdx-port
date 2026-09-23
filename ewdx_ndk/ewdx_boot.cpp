@@ -19,7 +19,7 @@
 
 // Bump per shipped build; journaled right after "=== run ===" so every
 // collected log positively identifies the binary that produced it.
-#define EWDX_BUILD_TAG "v22-2026-09-22-flag4-decompile-anchor"
+#define EWDX_BUILD_TAG "v24-2026-09-22-maw-alpha-carve"
 
 #include <stdio.h>
 #include <stdlib.h>
