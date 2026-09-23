@@ -19,7 +19,7 @@
 
 // Bump per shipped build; journaled right after "=== run ===" so every
 // collected log positively identifies the binary that produced it.
-#define EWDX_BUILD_TAG "v25.1-2026-09-23-prim-flags"
+#define EWDX_BUILD_TAG "v25.2-2026-09-23-maw-dump"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1193,6 +1193,119 @@ void ewdx_boot_journal(const char *msg) {
     EWDX_LOGW("boot: %s", msg);
     boot_mirror_push(msg);
     boot_mirror_flush();
+}
+
+// v25.2 diag (EWDX_MAW_DUMP builds): publish one binary blob (BMP) to
+// filesDir/<name> AND Downloads/<name> via the same MediaStore path the
+// journal mirror uses. Best-effort by design: a refused dump never breaks
+// the frame; the next dump slot overwrites the previous one.
+void ewdx_boot_dump_binary(const char *name, const unsigned char *data,
+                           unsigned len) {
+    char path[2048];
+    FILE *fp;
+    if (name == NULL || data == NULL || len == 0) return;
+    // filesDir authoritative copy (survives even if MediaStore refuses).
+    ewdx_resolve(name, path, sizeof(path));
+    fp = fopen(path, "wb");
+    if (fp != NULL) {
+        fwrite(data, 1, len, fp);
+        fclose(fp);
+    }
+#ifdef __ANDROID__
+    {
+        // Mirror to Downloads through the journal's MediaStore writer.
+        // One-shot content: push into the mirror buffer, force a flush of
+        // exactly this payload (bypassing the throttle), then restore.
+        static unsigned char *saved = NULL;
+        static size_t saved_cap = 0;
+        size_t need = (size_t)len + 2;
+        if (g_mirror_len + need >= (size_t)EWDX_MIRROR_CAP) return;
+        if (saved_cap < (size_t)EWDX_MIRROR_CAP) {
+            saved_cap = (size_t)EWDX_MIRROR_CAP;
+            saved = (unsigned char *)malloc(saved_cap);
+        }
+        if (saved == NULL) return;
+        memcpy(saved, g_mirror, g_mirror_len + 1);
+        size_t saved_len = g_mirror_len;
+        memcpy(g_mirror, data, len);
+        g_mirror_len = len;
+        g_mirror[len] = 0;
+        // Direct MediaStore write under the canonical name, throttle-free.
+        JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
+        if (env != NULL) {
+            if (env->ExceptionCheck()) env->ExceptionClear();
+            jobject act = (jobject)SDL_AndroidGetActivity();
+            if (act != NULL && !env->ExceptionCheck()) {
+                jclass actCls = env->GetObjectClass(act);
+                if (actCls != NULL && !env->ExceptionCheck()) {
+                    jmethodID resMid = env->GetMethodID(actCls,
+                        "getContentResolver", "()Landroid/content/ContentResolver;");
+                    if (resMid != NULL && !env->ExceptionCheck()) {
+                        jobject resolver = env->CallObjectMethod(act, resMid);
+                        if (resolver != NULL && !env->ExceptionCheck()) {
+                            jobject uri = boot_mediastore_uri(env, resolver, name);
+                            if (uri != NULL) {
+                                jclass resCls = env->GetObjectClass(resolver);
+                                jmethodID ofdMid = env->GetMethodID(resCls,
+                                    "openFileDescriptor",
+                                    "(Landroid/net/Uri;Ljava/lang/String;)Landroid/os/ParcelFileDescriptor;");
+                                if (ofdMid != NULL && !env->ExceptionCheck()) {
+                                    jstring mode = env->NewStringUTF("rwt");
+                                    jobject pfd = env->CallObjectMethod(resolver, ofdMid, uri, mode);
+                                    env->DeleteLocalRef(mode);
+                                    if (pfd != NULL && !env->ExceptionCheck()) {
+                                        jclass pfdCls = env->GetObjectClass(pfd);
+                                        jmethodID detMid = env->GetMethodID(pfdCls, "detachFd", "()I");
+                                        jmethodID clsMid = env->GetMethodID(pfdCls, "close", "()V");
+                                        if (detMid != NULL && !env->ExceptionCheck()) {
+                                            int fd = env->CallIntMethod(pfd, detMid);
+                                            if (!env->ExceptionCheck() && fd >= 0) {
+                                                ftruncate(fd, 0);
+                                                if (write(fd, data, (size_t)len) == (ssize_t)len) {
+                                                    char msg[96];
+                                                    snprintf(msg, sizeof(msg),
+                                                             "[dump] %s written (%u B)", name, len);
+                                                    boot_mirror_push(msg);
+                                                }
+                                                close(fd);
+                                            }
+                                        } else {
+                                            env->ExceptionClear();
+                                        }
+                                        if (clsMid != NULL) env->CallVoidMethod(pfd, clsMid);
+                                        env->ExceptionClear();
+                                        env->DeleteLocalRef(pfdCls);
+                                    } else {
+                                        env->ExceptionClear();
+                                    }
+                                    if (pfd != NULL) env->DeleteLocalRef(pfd);
+                                } else {
+                                    env->ExceptionClear();
+                                }
+                                env->DeleteLocalRef(resCls);
+                                env->DeleteLocalRef(uri);
+                            }
+                            env->DeleteLocalRef(resolver);
+                        } else {
+                            env->ExceptionClear();
+                        }
+                    } else {
+                        env->ExceptionClear();
+                    }
+                    env->DeleteLocalRef(actCls);
+                } else {
+                    env->ExceptionClear();
+                }
+                env->DeleteLocalRef(act);
+            } else {
+                env->ExceptionClear();
+            }
+        }
+        // Restore the journal mirror buffer exactly as it was.
+        memcpy(g_mirror, saved, saved_len + 1);
+        g_mirror_len = saved_len;
+    }
+#endif  // __ANDROID__
 }
 
 // Async-signal-safe: raw syscalls only.

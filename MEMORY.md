@@ -6,7 +6,16 @@
 > Deeper context lives in `GUIDE.md` (how/why), `ewdx_ndk/README.md` (module map),
 > and `analysis/session-*.md` (per-day forensic logs).
 >
-> Last updated: **2026-09-23 (session F.3, v25)** — black square GONE
+> Last updated: **2026-09-23 (session G, v25.2-diag)** — v25.1 owner test:
+> menu "white stuff" RESOLVED (it was the feather sprites — supposed to be
+> there; the flag fix un-broke them), 2 intestines moving (was 1). Still:
+> black box on the corners of the circle. v25.2 is a DIAG build (buffer
+> 2/5/6 BMP dumps into Downloads at the first POV composite + [prim] draw
+> stream journal) because every script-level theory checked out on paper —
+> the bug lives in runtime buffer state only a dump can show. Shipped
+> `~/Downloads/ewdx-v252-maw-dump.apk`. NEW GitHub token supplied by owner,
+> verified (user tencentfurrys, repo scope) + stored in ~/.git-credentials.
+> (session F.3, v25) — black square GONE
 > (v24.1 owner-confirmed). Remaining black + missing squirm/flash rooted
 > to the PRIMITIVE PATH stub (DGADDPRIMITIVE added one degenerate
 > vertex/quad → stomach wobble (part(19)==1 scanline primitives from
@@ -265,3 +274,31 @@ Video tooling: ffmpeg NOT installed. Use Python `opencv-python-headless`
   v24.1-2026-09-23-clear-alpha256). Logs sorted: all 126 pre-v24.1 logs
   → `MuMuSharedFolder/Download/archive_20260922_pre_v241/`. NEXT: owner
   v24.1 test — expect square gone, scene up to the ring.
+- 2026-09-23 (session F.3, v25/v25.1): v24.1 owner test PASSED (black
+  square gone) but POV had exactly ONE intestine moving + white row wall
+  on menus → primitive path rewrite (v25) then flag-word fix (v25.1: the
+  DGADDPRIMITIVE arg = DGGCOPY flag word; centered + anchor + mirror per
+  primitive). Shipped `~/Downloads/ewdx-v251-prim-flags.apk`.
+  OWNER v25.1 TEST: menu white stuff GONE (and it was the FEATHERS —
+  supposed to be on the main menu; flag fix un-broke them), 2 intestines
+  moving (was 1) — but black box on the corners of the circle PERSISTS.
+- 2026-09-23 (session G, v25.2-diag): pixel forensics
+  (`analysis/v252_evidence/`, 14 scripts committed) — corners are OPAQUE
+  black plate (not night scene 45,45,45), v24.1 showed scene through;
+  ring shrank inside the plate after the primitive rewrite; mot decode
+  (p0 ball / p39 ring / p17 wobble rows y=81..175) + atlas keys check out
+  on paper → bug is RUNTIME buffer state, not script semantics. v25.2 =
+  DIAG build: at the first buffer-5→scene maw copy dumps buffers
+  6/2/5 as BMPs (24bpp) into Downloads (`ewdx-dump-buf{2,5,6}.bmp`, one
+  set per run) via a new `ewdx_boot_dump_binary()` MediaStore mirror +
+  journals the [prim] draw stream; EWDX_MAW_DUMP define; prim cap
+  512→4096 (wobble-loop cap-trip reports ~2s lag). Shipped
+  `~/Downloads/ewdx-v252-maw-dump.apk`, pushed to apks repo (bae7aac).
+  Build env rebuilt on fresh RDP box: sibling checkouts re-cloned per
+  refs.md pins, assets+start.ax extracted from shipped v25.1 APK into
+  android/app/src/main/assets, local.properties written (forward-slash
+  sdk.dir — backslash form breaks AGP SdkLocator), debug.keystore made.
+  NEW GitHub token from owner verified + stored (~/.git-credentials).
+  NEXT: owner runs v25.2 once into the POV, sends Downloads/ewdx-boot*.log
+  + ewdx-dump-buf{2,5,6}.bmp → read buf6 (staging) vs buf5 (composite)
+  and fix the corner-black for real (v25.3).

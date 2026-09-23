@@ -109,7 +109,10 @@ target_compile_definitions(ewdx PUBLIC HSP64)
 # porthole) draws + pixel readback at each maw composite. Rare event, safe
 # for a short repro run. v24 carries the FIX (blend alpha carve), journal
 # OFF for normal gameplay.
-# target_compile_definitions(ewdx PUBLIC EWDX_MAW_JOURNAL)
+target_compile_definitions(ewdx PUBLIC EWDX_MAW_JOURNAL)
+# v25.2 diag: dump buffers 2/5/6 as BMPs into Downloads at the first POV
+# composite (one set per run). ON for this diag build only.
+target_compile_definitions(ewdx PUBLIC EWDX_MAW_DUMP)
 target_include_directories(ewdx PUBLIC
     "../../../../../ewdx_ndk"
     "../../../../../../SDL_ttf"

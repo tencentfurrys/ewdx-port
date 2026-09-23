@@ -79,6 +79,13 @@ void ewdx_boot_crash_clean(void);
 // remotely whether the game loop ticks, where it sits, and if touch works.
 void ewdx_boot_frame(void);
 
+// v25.2 diag (EWDX_MAW_DUMP builds): write a binary blob (BMP) to
+// filesDir/<name> and mirror it into Downloads/<name> through the same
+// MediaStore path the boot journal uses. Silent no-op on failure so a
+// refused dump can never break the frame.
+void ewdx_boot_dump_binary(const char *name, const unsigned char *data,
+                           unsigned len);
+
 #ifdef __cplusplus
 }
 #endif

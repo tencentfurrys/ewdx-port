@@ -219,6 +219,80 @@ static void emit_quad(GLuint tex, int texW, int texH, int vflip,
 #define EWDX_MAW_BUF 5
 #endif
 
+#ifdef EWDX_MAW_DUMP
+// v25.2 diag: dump buffers 2/5/6 as 24-bit BMPs into Downloads during the
+// POV composite (one dump set per app run, at the first buffer-5->scene
+// copy). 24bpp (RGB, no alpha) shows every black plate the game would key
+// or blend; alpha truth comes from the [maw] readback journal line. BMP
+// rows are bottom-up: row 0 in memory = top row of the GL texture.
+static void ewdx_bmp_dump(const char *name, unsigned char *rgba, int w, int h,
+                          int pitch) {
+    int rowBytes = w * 3, pad = (4 - (rowBytes & 3)) & 3;
+    unsigned fsz = 54 + (unsigned)(rowBytes + pad) * h;
+    unsigned char *bmp = (unsigned char *)calloc(1, fsz);
+    if (!bmp) return;
+    unsigned char *hdr = bmp;
+    hdr[0] = 'B'; hdr[1] = 'M';
+    { unsigned v = fsz;             memcpy(hdr + 2, &v, 4); }
+    { unsigned v = 54;              memcpy(hdr + 10, &v, 4); }
+    { unsigned v = 40;              memcpy(hdr + 14, &v, 4); }
+    { int v = w;                    memcpy(hdr + 18, &v, 4); }
+    { int v = h;                    memcpy(hdr + 22, &v, 4); }
+    { unsigned short v = 1;         memcpy(hdr + 26, &v, 2); }
+    { unsigned short v = 24;        memcpy(hdr + 28, &v, 2); }
+    { unsigned v = 0;               memcpy(hdr + 30, &v, 4); } // BI_RGB
+    { unsigned v = (unsigned)(rowBytes + pad) * h; memcpy(hdr + 34, &v, 4); }
+    for (int y = 0; y < h; y++) {
+        unsigned char *dst = bmp + 54 + (unsigned)(rowBytes + pad) * y;
+        // GL row 0 = BMP BOTTOM row => read the texture upside down.
+        unsigned char *src = rgba + (size_t)(h - 1 - y) * pitch;
+        for (int x = 0; x < w; x++) {
+            dst[x * 3 + 0] = src[x * 4 + 2];
+            dst[x * 3 + 1] = src[x * 4 + 1];
+            dst[x * 3 + 2] = src[x * 4 + 0];
+        }
+    }
+    ewdx_boot_dump_binary(name, bmp, fsz);
+    free(bmp);
+}
+
+static void ewdx_maw_dump_buffers(void) {
+    static int dumped = 0;
+    char name[64], msg[128];
+    if (dumped) return;
+    dumped = 1;
+    ewdx_boot_journal("[dump] POV composite detected: dumping buffers 6/2/5");
+    ewdx_flush();
+    GLint fbo = 0, vp[4];
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &fbo);
+    glGetIntegerv(GL_VIEWPORT, vp);
+    for (int id = 6; id >= 2; id--) {
+        EwdxBuffer *b = (id < EWDX_MAX_BUFFERS) ? &ewdx.buf[id] : NULL;
+        if (b == NULL || !b->valid || !b->tex || !b->fbo) {
+            snprintf(msg, sizeof(msg), "[dump] buf%d invalid (valid=%d tex=%u)",
+                     id, b ? b->valid : -1, b ? (unsigned)b->tex : 0);
+            ewdx_boot_journal(msg);
+            continue;
+        }
+        glBindFramebuffer(GL_FRAMEBUFFER, b->fbo);
+        glViewport(0, 0, b->w, b->h);
+        unsigned char *px = (unsigned char *)malloc((size_t)b->w * b->h * 4);
+        if (px == NULL) continue;
+        glReadPixels(0, 0, b->w, b->h, GL_RGBA, GL_UNSIGNED_BYTE, px);
+        snprintf(name, sizeof(name), "ewdx-dump-buf%d.bmp", id);
+        ewdx_bmp_dump(name, px, b->w, b->h, b->w * 4);
+        free(px);
+        snprintf(msg, sizeof(msg), "[dump] buf%d %dx%d done", id, b->w, b->h);
+        ewdx_boot_journal(msg);
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glViewport(vp[0], vp[1], vp[2], vp[3]);
+}
+#define EWDX_MAW_DUMP_HOOK() ewdx_maw_dump_buffers()
+#else
+#define EWDX_MAW_DUMP_HOOK() ((void)0)
+#endif  // EWDX_MAW_DUMP
+
 int ewdx_copy_flags(int id, int flags) {
     static int first = 1;
     if (id < 0 || id >= EWDX_MAX_BUFFERS) return 0;
@@ -242,6 +316,7 @@ int ewdx_copy_flags(int id, int flags) {
             // readback the porthole source AFTER this draw lands: force-flush,
             // bind buffer 5's FBO, read the (rx,ry,rw,rh) rect as RGBA.
             ewdx_flush();
+            EWDX_MAW_DUMP_HOOK();   // v25.2 diag: buffers 2/5/6 -> Downloads
             GLint fbo = 0, vp[4];
             glGetIntegerv(GL_FRAMEBUFFER_BINDING, &fbo);
             glGetIntegerv(GL_VIEWPORT, vp);
@@ -463,7 +538,10 @@ typedef struct {
     unsigned flags;   // v25.1: the DGADDPRIMITIVE arg = DGGCOPY flag word
                       // (7 = center+rect-scale+ctr-anchor, +8 uflip, +0x10 vflip)
 } EwdxPrim;
-#define EWDX_MAX_PRIMS 512   // wobble loops: one per scanline, up to 256 rows
+// wobble loops: one primitive per 1px scanline, up to 256 rows, and the
+// pre-v25.1 flag-mismatch cap-trip reports (~2s of lag then fmax dump spam)
+// tripped at 256. Headroom is free (512 B/prim; 2 MB at 4096).
+#define EWDX_MAX_PRIMS 4096
 static EwdxPrim prims[EWDX_MAX_PRIMS];
 static int prim_n = 0;
 
@@ -487,6 +565,10 @@ int ewdx_drawprim(void) {
     int tgtW = (ewdx.target == 0) ? ewdx.scr_w : ewdx.buf[ewdx.target].w;
     int tgtH = (ewdx.target == 0) ? ewdx.scr_h : ewdx.buf[ewdx.target].h;
     (void)tgtW; (void)tgtH;  // emit_quad reads ewdx.target itself
+    // v25.2 note: no source-remap clipping here. GL clips in clip space with
+    // perspective-correct UV interpolation — the same visible result as the
+    // D3D9 runtime clipper; a manual anchor remap would only mis-map the
+    // mirrored prims (menu tiles use 7+8*flip).
     for (int i = 0; i < prim_n; i++) {
         EwdxPrim *q = &prims[i];
         float dw = (float)q->rw, dh = (float)q->rh;
