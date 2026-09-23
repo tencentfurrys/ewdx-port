@@ -300,7 +300,15 @@ int ewdx_select(int id) {
 }
 
 int ewdx_color(int r, int g, int b, int a) {
-    ewdx.st.r = r; ewdx.st.g = g; ewdx.st.b = b; ewdx.st.a = a;
+    // v24.1: D3D9 packs DGCOLOR args into a 32-bit D3DCOLOR (RGBA bytes), so an
+    // alpha of 256 TRUNCATES to 0. The game's staging/menu clears are
+    // "DGCOLOR 0,0,0,256" (15 sites) — born-transparent black on D3D — but the
+    // port stored 256 and glClearColor clamped it to an OPAQUE 1.0: every
+    // staging buffer (mouth-art buffer 6, menu buffer 5) shipped an opaque
+    // black square through the zoom chain = the vore POV black box that
+    // survived v23/v24. Mirror the hardware truncation here.
+    ewdx.st.r = r & 0xff; ewdx.st.g = g & 0xff; ewdx.st.b = b & 0xff;
+    ewdx.st.a = a & 0xff;
     return -1;
 }
 

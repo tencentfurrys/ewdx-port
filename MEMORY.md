@@ -6,15 +6,18 @@
 > Deeper context lives in `GUIDE.md` (how/why), `ewdx_ndk/README.md` (module map),
 > and `analysis/session-*.md` (per-day forensic logs).
 >
-> Last updated: **2026-09-22 (session F)** — v23-diag ANSWERED: the maw
-> interior DOES render (prey body visible in the porthole), but it ships
-> with an opaque black 80×80 square — the mask's corner alpha-carve never
-> happened. Root cause proven: GLES2 forbids color factors as ALPHA
-> factors, so `glBlendFunc` silently dropped the alpha half of modes
-> 0/3/4/5 (v23 readback: 182/182 composites 100% opaque). v24 fix built
-> & shipped: `~/Downloads/ewdx-v24-maw-alpha-carve.apk`
-> (glBlendFuncSeparate, D3D-exact alpha rows, mode 0 alpha-respecting).
-> Reference capture = CLOUD PHONE, not web.
+> Last updated: **2026-09-23 (session F, v24.1)** — the v24 alpha-carve
+> fix was necessary but NOT sufficient: owner's v24 test still showed the
+> black square. REAL root cause found by size-mismatch forensics: the
+> square is NOT the 80×80 buffer-5 composite — it's the ~290px ZOOMED
+> staging chain (mouth art → buffer 6 → scaled into buffer 5), and the
+> script clears those staging buffers with `DGCOLOR 0,0,0,256` — alpha
+> 256 TRUNCATES to 0 in D3D9's 32-bit D3DCOLOR (born-transparent black),
+> but the port clamped 256→opaque. 15 clear sites, all alpha-256.
+> Fix: ewdx_color masks &0xff (hardware truncation parity).
+> Shipped `~/Downloads/ewdx-v241-clear-alpha256.apk` (tag
+> v24.1-2026-09-23-clear-alpha256). Old logs archived to
+> MuMuSharedFolder/Download/archive_20260922_pre_v241/ (126 files).
 
 ## What this project is (30 seconds)
 
@@ -45,19 +48,23 @@ per `refs.md`.
   (`v22_pivot_verify.py` rewritten, 144/144 + a v21-regression probe that
   asserts the old anchor MIS-matches — see
   `analysis/session-2026-09-22-v22-rebuild-verify.md`).
-- v24 NEXT OWNER ACTION: install `~/Downloads/ewdx-v24-maw-alpha-carve.apk`
-  and re-test the vore POV — corners should now show the scene (no black
-  square), interior behavior unchanged. Session-F evidence chain: owner
-  v23-diag run (MuMu screenshots 22:47–22:49 + 31 log rotations) → prey
-  body IS inside the porthole, corners opaque black; `[maw]` readback
-  182/182 "nontransparent=100%" = the mask's alpha carve never landed;
-  GLES2 alpha-factor illegality is the only mechanism consistent with
-  the RGB invert working while alpha stays 255. Corner crops:
-  `analysis/v22_pov/corners_big.jpg`, `corners_ref_vs_mumu.jpg`,
-  `mumu_full.jpg`.
-  Until v24 is owner-confirmed, the session-E "parity" section below
-  stays retracted (see its CORRECTION header). Reference capture = cloud
-  phone: `~/Downloads/2026_09_22_17_00_09.mp4` (854x480@33).
+- v24.1 NEXT OWNER ACTION: install `~/Downloads/ewdx-v241-clear-alpha256.apk`
+  and re-test the vore POV — the ~290px black square behind the ring
+  should be GONE (staging clears now born-transparent like D3D), scene
+  visible up to the ring, interior unchanged. Evidence chain for the real
+  root cause: v24 test (61 logs on tag v24-…-maw-alpha-carve, journal
+  off, square STILL present) + screenshot size math (square ≈300 game px
+  ≠ 80 px composite) + v23 journal draw scan (id=6 256×256 → buffer 5
+  scaled 287→394px = the zoom animation) + keyed asset previews
+  (`analysis/v24_blackbox/`: stom_s ring art has transparent surround;
+  stom1/stom2 = prey-part atlases). D3DCOLOR truncation: DGCOLOR alpha
+  256 → 0 on D3D9 (all 15 script clear sites use it); port clamped 256
+  → opaque 1.0 — ewdx_color now masks &0xff.
+  The v24 mode-0/glBlendFuncSeparate change stays (still required:
+  without it the mask corners would paint over the scene even with a
+  clean clear). Session-E "parity" verdict stays retracted.
+  Reference capture = cloud phone:
+  `~/Downloads/2026_09_22_17_00_09.mp4` (854x480@33).
 
 - **The lost v20 source is RECONSTRUCTED and now lives in the repo.** The v20
   "flag4 pivot fix" was recovered by normalized instruction diff of HEAD vs the
@@ -254,6 +261,18 @@ Video tooling: ffmpeg NOT installed. Use Python `opencv-python-headless`
   alpha-respecting mode 0 (all script mode-0 draws are alpha-255 → no
   other scene changes). Built + shipped
   `~/Downloads/ewdx-v24-maw-alpha-carve.apk` (tag
-  v24-2026-09-22-maw-alpha-carve verified in libmain.so). NEXT: owner
-  v24 test (corners scene-through, interior unchanged); revert the v23
-  journal comment block only if a new diag is ever needed.
+  v24-2026-09-22-maw-alpha-carve verified in libmain.so). OWNER v24
+  TEST: black square STILL present → v24 was necessary (mask carve) but
+  not sufficient.
+- 2026-09-23 (session F.1): size forensics on the v24 screenshot (square
+  ≈300 game px vs 80 px composite) + v23 journal draw scan identified the
+  ZOOMED STAGING CHAIN (mouth art → buffer 6 256×256 → scaled into
+  buffer 5, 287→394 px zoom animation) as the actual square source; keyed
+  asset previews (`analysis/v24_blackbox/`) showed the art itself is
+  clean. Real root cause: staging clears `DGCOLOR 0,0,0,256` — alpha 256
+  truncates to 0 in D3D9's D3DCOLOR (transparent black), the port
+  clamped it opaque. Fix: ewdx_color &0xff truncation parity. Shipped
+  `~/Downloads/ewdx-v241-clear-alpha256.apk` (tag
+  v24.1-2026-09-23-clear-alpha256). Logs sorted: all 126 pre-v24.1 logs
+  → `MuMuSharedFolder/Download/archive_20260922_pre_v241/`. NEXT: owner
+  v24.1 test — expect square gone, scene up to the ring.
