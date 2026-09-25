@@ -19,7 +19,7 @@
 
 // Bump per shipped build; journaled right after "=== run ===" so every
 // collected log positively identifies the binary that produced it.
-#define EWDX_BUILD_TAG "v25.2-2026-09-23-maw-dump"
+#define EWDX_BUILD_TAG "v25.4-2026-09-25-point-sampler"
 
 #include <stdio.h>
 #include <stdlib.h>

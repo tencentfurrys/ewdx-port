@@ -256,11 +256,23 @@ static void ewdx_bmp_dump(const char *name, unsigned char *rgba, int w, int h,
     free(bmp);
 }
 
+// v25.4: POV EPISODE tracking. v25.3 dumped exactly once per app run, so the
+// FIRST POV of a hours-long session owned the dumps and every later episode
+// (the one the owner films/reports) had no diagnostics. An episode = POV
+// activity (id-5 copies / wide buf-6 prim batches) separated by >=
+// EWDX_MAW_EPISODE_GAP presents of no activity. Each episode re-arms BOTH the
+// composite-time dump (buffers 6/2/5) and the present-time dump (buffers 1/4).
+#define EWDX_MAW_EPISODE_GAP 120        // ~2 s of presents with no POV activity
+static int mawSeen = 0;                 // active episode has fresh POV content
+static unsigned maw_episode = 0;
+static unsigned maw_presentTick = 0;    // bumped once per present
+static unsigned maw_lastCopyTick = 0;   // last POV-activity present tick
+
 static void ewdx_maw_dump_buffers(void) {
-    static int dumped = 0;
+    static unsigned last_ep = (unsigned)-1;
     char name[64], msg[128];
-    if (dumped) return;
-    dumped = 1;
+    if (last_ep == maw_episode) return;
+    last_ep = maw_episode;
     ewdx_boot_journal("[dump] POV composite detected: dumping buffers 6/2/5");
     ewdx_flush();
     GLint fbo = 0, vp[4];
@@ -293,6 +305,63 @@ static void ewdx_maw_dump_buffers(void) {
 #define EWDX_MAW_DUMP_HOOK() ((void)0)
 #endif  // EWDX_MAW_DUMP
 
+#ifdef EWDX_MAW_DUMP
+// Present-path scene capture: ~3 frames after the first POV trigger, dump the
+// final scene FBO (buffer 1, 640x480) — the composite AFTER the copy of buffer
+// 5 and after everything else the frame stacks on top. Explains the visible
+// result even if the composite-time dumps race the staging.
+void ewdx_maw_note_seen(void) { mawSeen = 1; }
+int ewdx_maw_present_dump(void) {
+    static unsigned done_ep = (unsigned)-1;
+    static int pres = 0;
+    maw_presentTick++;
+    if (!mawSeen) return 0;
+    if (maw_presentTick - maw_lastCopyTick > EWDX_MAW_EPISODE_GAP) {
+        mawSeen = 0;   // episode ended without a scene capture
+        return 0;
+    }
+    if (done_ep == maw_episode) return 0;
+    if (++pres < 3) return 0;
+    pres = 0;
+    done_ep = maw_episode;
+    mawSeen = 0;       // re-arm for the next episode
+    ewdx_flush();
+    GLint fbo = 0, vp[4];
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &fbo);
+    glGetIntegerv(GL_VIEWPORT, vp);
+    // Buffers 1 (scene) and 4 (final darkened frame = what the player sees;
+    // the script's end-of-frame chain is DGCLEAR(4,opaque black) +
+    // DGGCOPY 1->4 with the 255-dark multiply + DGGCOPY 4->screen).
+    for (int id = 1; id <= 4; id += 3) {
+        EwdxBuffer *b = &ewdx.buf[id];
+        if (!b->valid || !b->tex || !b->fbo) {
+            char msg[64];
+            snprintf(msg, sizeof(msg), "[dump] present: buf%d invalid", id);
+            ewdx_boot_journal(msg);
+            continue;
+        }
+        glBindFramebuffer(GL_FRAMEBUFFER, b->fbo);
+        glViewport(0, 0, b->w, b->h);
+        unsigned char *px = (unsigned char *)malloc((size_t)b->w * b->h * 4);
+        if (px) {
+            glReadPixels(0, 0, b->w, b->h, GL_RGBA, GL_UNSIGNED_BYTE, px);
+            char name[32], msg[96];
+            snprintf(name, sizeof(name), "ewdx-dump-buf%d.bmp", id);
+            ewdx_bmp_dump(name, px, b->w, b->h, b->w * 4);
+            free(px);
+            snprintf(msg, sizeof(msg), "[dump] buf%d %dx%d done (present)", id, b->w, b->h);
+            ewdx_boot_journal(msg);
+        }
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glViewport(vp[0], vp[1], vp[2], vp[3]);
+    return 1;
+}
+#else
+void ewdx_maw_note_seen(void) { }
+int ewdx_maw_present_dump(void) { return 0; }
+#endif
+
 int ewdx_copy_flags(int id, int flags) {
     static int first = 1;
     if (id < 0 || id >= EWDX_MAX_BUFFERS) return 0;
@@ -313,10 +382,17 @@ int ewdx_copy_flags(int id, int flags) {
                  ewdx.st.blend, ewdx.target);
         ewdx_boot_journal(msg);
         if (id == EWDX_MAW_BUF) {
+            // v25.4 episode logic: POV activity after a gap = new episode
+            // (re-arms dumps). Then fire the composite dump BEFORE the flush
+            // so buffers are captured as the composite begins.
+            if (maw_presentTick - maw_lastCopyTick > EWDX_MAW_EPISODE_GAP)
+                maw_episode++;
+            maw_lastCopyTick = maw_presentTick;
+            mawSeen = 1;
+            EWDX_MAW_DUMP_HOOK();
             // readback the porthole source AFTER this draw lands: force-flush,
             // bind buffer 5's FBO, read the (rx,ry,rw,rh) rect as RGBA.
             ewdx_flush();
-            EWDX_MAW_DUMP_HOOK();   // v25.2 diag: buffers 2/5/6 -> Downloads
             GLint fbo = 0, vp[4];
             glGetIntegerv(GL_FRAMEBUFFER_BINDING, &fbo);
             glGetIntegerv(GL_VIEWPORT, vp);
@@ -325,6 +401,14 @@ int ewdx_copy_flags(int id, int flags) {
             int rx = m_rx, ry = m_ry, rw = m_rw > 0 ? m_rw : 1, rh2 = m_rh > 0 ? m_rh : 1;
             if (rx + rw > t->w) rw = t->w - rx;
             if (ry + rh2 > t->h) rh2 = t->h - ry;
+            // v25.4: glReadPixels is GL bottom-origin but (rx,ry) is the
+            // script's top-origin rect — mirror Y or the readback samples the
+            // WRONG rows (v25.3 logs: "avgRGB=765" = the white clear BELOW the
+            // porthole, not the composite itself). The BMP dumps already
+            // handle this; only this rect readback was mirrored wrong.
+            int ry_gl = t->h - ry - rh2;
+            if (ry_gl < 0) { rh2 += ry_gl; ry_gl = 0; }
+            ry = ry_gl;
             if (rw > 0 && rh2 > 0) {
                 unsigned char *px = (unsigned char *)malloc((size_t)rw * rh2 * 4);
                 if (px) {
@@ -337,8 +421,8 @@ int ewdx_copy_flags(int id, int flags) {
                     long rgb = sum / npx;                 // 0..765 avg per px
                     int pct = (int)(100 * nalpha / npx);
                     snprintf(msg, sizeof(msg),
-                             "[maw] buf5 readback %dx%d@(%d,%d): avgRGB=%ld nontransparent=%d%%",
-                             rw, rh2, rx, ry, rgb, pct);
+                             "[maw] buf5 readback %dx%d@(%d,%d glY=%d): avgRGB=%ld nontransparent=%d%%",
+                             rw, rh2, rx, m_ry, ry, rgb, pct);
                     ewdx_boot_journal(msg);
                     free(px);
                 }
@@ -442,8 +526,11 @@ int ewdx_loadmemory(const void *bmp, int size, int slot) {
     }
     if (!t->tex) glGenTextures(1, &t->tex);
     glBindTexture(GL_TEXTURE_2D, t->tex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    // v25.4: POINT — DGLOADMEMORY textures must match D3D9's default point
+    // sampling (hmm.dll sets no filters). GL_LINEAR blurred the atlas
+    // uploads; see ewdx_buffer for the full note.
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, W, H, 0, GL_RGBA, GL_UNSIGNED_BYTE, out);
@@ -502,8 +589,9 @@ int ewdx_loadmemory_png(const void *png, int size, int slot) {
     }
     if (!t->tex) glGenTextures(1, &t->tex);
     glBindTexture(GL_TEXTURE_2D, t->tex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    // v25.4: POINT (second DGLOADMEMORY upload path, PNG-renamed variants)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, W, H, 0, GL_RGBA, GL_UNSIGNED_BYTE, out);
@@ -537,6 +625,12 @@ typedef struct {
     int r, g, b, a;
     unsigned flags;   // v25.1: the DGADDPRIMITIVE arg = DGGCOPY flag word
                       // (7 = center+rect-scale+ctr-anchor, +8 uflip, +0x10 vflip)
+    int tgt;          // v25.3-diag: render target when the prim was ADDED.
+                      // D3D9 AddPrimitive locks the destination at ADD time
+                      // (verts are screen/clip-space by DrawPrimitive); the
+                      // v25 rewrite expanded at DRAW time against the live
+                      // target — a DGGSEL between ADD and DRAW mis-targeted
+                      // every staged quad.
 } EwdxPrim;
 // wobble loops: one primitive per 1px scanline, up to 256 rows, and the
 // pre-v25.1 flag-mismatch cap-trip reports (~2s of lag then fmax dump spam)
@@ -555,6 +649,37 @@ int ewdx_addprim(unsigned flags) {
     q->scx = m_scx; q->scy = m_scy; q->ang = m_ang;
     q->r = ewdx.st.r; q->g = ewdx.st.g; q->b = ewdx.st.b; q->a = ewdx.st.a;
     q->flags = flags;
+    q->tgt = ewdx.target;
+#ifdef EWDX_MAW_JOURNAL
+    // Journal ONLY the wide scanline prims (the wobble staging; menu tiles are
+    // small and would spam thousands of lines per frame = the v18 I/O lag),
+    // under a hard budget so a long run can never drown the journal.
+    static int primj_budget = 200000;
+    if (primj_budget > 0 && m_rw >= 120 && m_scx >= 120.0f) {
+        primj_budget--;
+        static unsigned pseq = 0;
+        char msg[192];
+        snprintf(msg, sizeof(msg),
+                 "[prim] +%u f=%#x dst=(%d,%d %dx%d) src=(%d,%d) sc=(%.2f,%.2f) ang=%u col=(%d,%d,%d,%d) tex=%d tgt=%d",
+                 ++pseq, flags, m_posx, m_posy, m_rw, m_rh, m_rx, m_ry,
+                 m_scx / 256.0f, m_scy / 256.0f, m_ang,
+                 ewdx.st.r, ewdx.st.g, ewdx.st.b, ewdx.st.a, m_primTex, ewdx.target);
+        ewdx_boot_journal(msg);
+    }
+#endif
+#ifdef EWDX_MAW_DUMP
+    // Secondary trigger: wide scanline prims staged into buffer 6 (the POV
+    // wobble staging is ~130-190px rows; menu prims are small tiles). Same
+    // episode logic as the id-5 copy: activity after a gap starts a new
+    // episode and re-arms the dumps.
+    if (ewdx.target == 6 && m_rw >= 120 && m_scx >= 120.0f) {
+        if (maw_presentTick - maw_lastCopyTick > EWDX_MAW_EPISODE_GAP)
+            maw_episode++;
+        maw_lastCopyTick = maw_presentTick;
+        mawSeen = 1;
+        EWDX_MAW_DUMP_HOOK();
+    }
+#endif
     return -1;
 }
 
@@ -562,6 +687,20 @@ int ewdx_drawprim(void) {
     if (prim_n < 1 || m_primTex < 0 || m_primTex >= EWDX_MAX_BUFFERS) { prim_n = 0; return 0; }
     EwdxBuffer *t = &ewdx.buf[m_primTex];
     if (!t->valid) { prim_n = 0; return 0; }
+#ifdef EWDX_MAW_JOURNAL
+    {
+        static int drawj_budget = 40000;
+        if (drawj_budget > 0) {
+            drawj_budget--;
+            static unsigned dseq = 0;
+            char msg[128];
+            snprintf(msg, sizeof(msg),
+                     "[prim] DRAW#%u n=%d tex=%d tgt=%d blend=%d",
+                     ++dseq, prim_n, m_primTex, ewdx.target, ewdx.st.blend);
+            ewdx_boot_journal(msg);
+        }
+    }
+#endif
     int tgtW = (ewdx.target == 0) ? ewdx.scr_w : ewdx.buf[ewdx.target].w;
     int tgtH = (ewdx.target == 0) ? ewdx.scr_h : ewdx.buf[ewdx.target].h;
     (void)tgtW; (void)tgtH;  // emit_quad reads ewdx.target itself
@@ -573,6 +712,11 @@ int ewdx_drawprim(void) {
         EwdxPrim *q = &prims[i];
         float dw = (float)q->rw, dh = (float)q->rh;
         if (dw <= 0 || dh <= 0) continue;
+        // v25.3-diag: D3D9 locks the destination at ADD time. Expand against
+        // the prim's own snapshot target, not the live one (a DGGSEL between
+        // DGADDPRIMITIVE and DGDRAWPRIMITIVE previously retargeted the whole
+        // batch — the only behavioral change in this build).
+        if (q->tgt != ewdx.target) ewdx_select(q->tgt);
         float dx = (float)q->posx, dy = (float)q->posy;
         if (q->flags & 1) {  // centered: DGPOS is the quad CENTER
             dx -= dw * K_HALF;

@@ -41,6 +41,9 @@ typedef struct {
     int angle;                // DGSCALEANDANGLE, hmm angle units
     int r, g, b, a;           // DGCOLOR 0..255
     int blend;                // DGBLENDMODE 0..7
+    int target;               // v25.3-diag: target when this color was last set
+                              // (DGCOLOR -> DGGSEL 0 -> DGCLEAR chains must be
+                              // attributable; see [dump] clear journal)
 } EwdxDrawState;
 
 typedef struct {

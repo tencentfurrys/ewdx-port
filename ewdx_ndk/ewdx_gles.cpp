@@ -249,8 +249,13 @@ int ewdx_buffer(int id, int w, int h) {
     if (b->valid) ewdx_drop_buffer(b);
     glGenTextures(1, &b->tex);
     glBindTexture(GL_TEXTURE_2D, b->tex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    // v25.4: D3D9 default sampler state is POINT for both MIN and MAG, and
+    // hmm.dll never sets D3DTSS_*FILTER (no stage-state calls in the draw
+    // path per Ghidra). GL_LINEAR here softened every buffer upscale — the
+    // owner-visible "PC is point-filtered, Android is blurry/less detail"
+    // regression (wobble scanlines turned to mush through the POV zoom).
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
@@ -309,12 +314,40 @@ int ewdx_color(int r, int g, int b, int a) {
     // survived v23/v24. Mirror the hardware truncation here.
     ewdx.st.r = r & 0xff; ewdx.st.g = g & 0xff; ewdx.st.b = b & 0xff;
     ewdx.st.a = a & 0xff;
+    ewdx.st.target = ewdx.target;   // v25.3-diag: which target was live at set time
     return -1;
 }
 
 int ewdx_clear(void) {
+#ifdef EWDX_MAW_DUMP
+    // v25.3-diag: DGCLEAR witness. DGCLEAR is immediate on GL, and ewdx_flush()
+    // below lands queued draws BEFORE the clear — but the flush runs run_check
+    // against ewdx.st, which the script may have recolored via DGCOLOR after
+    // switching targets (DGGSEL 0; DGCOLOR 0,0,0,0; DGCLEAR). Record the clear
+    // state BEFORE flushing, journal it, then restore so later state stays
+    // truthful. Zero behavioral change outside the journal.
+    static int clr_seq = 0;
+    int clr_t = ewdx.target, clr_x = 0, clr_y = 0, clr_w = 0, clr_h = 0;
+    int clr_r = ewdx.st.r, clr_g = ewdx.st.g, clr_b = ewdx.st.b, clr_a = ewdx.st.a;
+    if (clr_t > 0 && clr_t < EWDX_MAX_BUFFERS && ewdx.buf[clr_t].valid) {
+        clr_w = ewdx.buf[clr_t].w; clr_h = ewdx.buf[clr_t].h;
+    }
+    {
+        char msg[128];
+        snprintf(msg, sizeof(msg),
+                 "[dump] clear#%d t=%d (%d,%d %dx%d) rgba=%d,%d,%d,%d (state.t=%d)",
+                 ++clr_seq, clr_t, clr_x, clr_y, clr_w, clr_h,
+                 clr_r, clr_g, clr_b, clr_a, ewdx.st.target);
+        ewdx_boot_journal(msg);
+    }
+#endif
     // D3D Clear is immediate: earlier queued draws (command order) must land first.
     ewdx_flush();
+#ifdef EWDX_MAW_DUMP
+    // restore the pre-flush color state (run_check may have read it mid-flush;
+    // nothing in the flush writes ewdx.st, but keep the witness contract exact)
+    ewdx.st.r = clr_r; ewdx.st.g = clr_g; ewdx.st.b = clr_b; ewdx.st.a = clr_a;
+#endif
     glClearColor(ewdx.st.r / 255.0f, ewdx.st.g / 255.0f,
                  ewdx.st.b / 255.0f, ewdx.st.a / 255.0f);
     glClear(GL_COLOR_BUFFER_BIT);
@@ -324,6 +357,12 @@ int ewdx_clear(void) {
 int ewdx_present(void) {
     static int first = 1;
     ewdx_flush();  // step (c): drain quad batcher before swap
+#ifdef EWDX_MAW_DUMP
+    // v25.3-diag: one-shot capture of the composed scene (buffers 1/4) a few
+    // frames after the first POV trigger — buffers still intact here, before
+    // the target-0 switch.
+    ewdx_maw_present_dump();
+#endif
     if (ewdx.target != 0) ewdx_select(0);
     // Letterbox bars are NOT cleared by the game (its DGCLEAR only covers the
     // 640x480 view). Clear ONLY the bar rects: a fullscreen clear here would

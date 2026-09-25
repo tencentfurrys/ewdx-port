@@ -50,6 +50,13 @@ int ewdx_line(int x1, int y1, int x2, int y2); // DGLINE (1px perp quad)
 
 void ewdx_flush(void);  // flush pending quads (called by present + state changes)
 
+// v25.3-diag (EWDX_MAW_DUMP builds): POV seen-marker + one-shot present-path
+// dump of the composed scene (buffers 1 and 4) a few frames after the first
+// POV trigger. Present calls ewdx_maw_present_dump() every frame; it returns
+// 1 exactly once (the frame it dumped).
+void ewdx_maw_note_seen(void);
+int  ewdx_maw_present_dump(void);
+
 // Immediate textured quad for foreign GL textures (text cache). Caller must
 // ewdx_flush() first. NDC corners + UVs (v0 = top) + linear color.
 void ewdx_immediate_quad(unsigned int tex,

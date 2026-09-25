@@ -6,7 +6,27 @@
 > Deeper context lives in `GUIDE.md` (how/why), `ewdx_ndk/README.md` (module map),
 > and `analysis/session-*.md` (per-day forensic logs).
 >
-> Last updated: **2026-09-23 (session G, v25.2-diag)** — v25.1 owner test:
+> Last updated: **2026-09-25 (session H.1, v25.4 point-sampler)** — v25.3
+> owner logs + screenshot: POINT SAMPLING SHIPPED (owner: "way more detail
+> and glossy") — D3D9's default point filter vs the port's GL_LINEAR was
+> the "PC crisp / Android blurry" gap; ewdx_buffer + both DGLOADMEMORY
+> paths now GL_NEAREST. v25.3 diag confirmed working (clear witness +
+> episode dumps + [prim] journal fire; BMPs land on device Downloads).
+> avgRGB=765 readback was a Y-MIRROR artifact in the rect readback (fixed;
+> log prints glY now). Open: corner-black persists (screenshot: scene
+> shows through LEFT corners, black RIGHT corners = per-quarter mask
+> defect); owner says interior animation is "slap not squeeze" (PC has
+> point-filtered 1px scanline wobble; port Linear blurred it — point
+> filter may already improve; needs PC-truth diff). NEW TOOL:
+> tools/hmm_spy — PC hmm.dll forwarding spy (x86, zig cc): logs the full
+> DG* stream in port vocabulary, ring-flushes on DGGCOPY 5; install =
+> rename real hmm.dll→hmm_real.dll, drop spy in, play, read hmm_spy.log.
+> NEXT: owner runs PC with spy through a squeeze POV + sends Android
+> v25.4 BMPs (ewdx-dump-buf{1,2,4,5,6}.bmp) → diff PC truth vs port
+> stream → fix mask quarters (v25.5). Shipped
+> `~/Downloads/ewdx-v254-point-sampler.apk` (tag
+> v25.4-2026-09-25-point-sampler).
+> (session G, v25.2-diag) — v25.1 owner test:
 > menu "white stuff" RESOLVED (it was the feather sprites — supposed to be
 > there; the flag fix un-broke them), 2 intestines moving (was 1). Still:
 > black box on the corners of the circle. v25.2 is a DIAG build (buffer
@@ -281,24 +301,36 @@ Video tooling: ffmpeg NOT installed. Use Python `opencv-python-headless`
   primitive). Shipped `~/Downloads/ewdx-v251-prim-flags.apk`.
   OWNER v25.1 TEST: menu white stuff GONE (and it was the FEATHERS —
   supposed to be on the main menu; flag fix un-broke them), 2 intestines
-  moving (was 1) — but black box on the corners of the circle PERSISTS.
-- 2026-09-23 (session G, v25.2-diag): pixel forensics
-  (`analysis/v252_evidence/`, 14 scripts committed) — corners are OPAQUE
-  black plate (not night scene 45,45,45), v24.1 showed scene through;
-  ring shrank inside the plate after the primitive rewrite; mot decode
-  (p0 ball / p39 ring / p17 wobble rows y=81..175) + atlas keys check out
-  on paper → bug is RUNTIME buffer state, not script semantics. v25.2 =
-  DIAG build: at the first buffer-5→scene maw copy dumps buffers
-  6/2/5 as BMPs (24bpp) into Downloads (`ewdx-dump-buf{2,5,6}.bmp`, one
-  set per run) via a new `ewdx_boot_dump_binary()` MediaStore mirror +
-  journals the [prim] draw stream; EWDX_MAW_DUMP define; prim cap
-  512→4096 (wobble-loop cap-trip reports ~2s lag). Shipped
-  `~/Downloads/ewdx-v252-maw-dump.apk`, pushed to apks repo (bae7aac).
-  Build env rebuilt on fresh RDP box: sibling checkouts re-cloned per
-  refs.md pins, assets+start.ax extracted from shipped v25.1 APK into
-  android/app/src/main/assets, local.properties written (forward-slash
-  sdk.dir — backslash form breaks AGP SdkLocator), debug.keystore made.
-  NEW GitHub token from owner verified + stored (~/.git-credentials).
-  NEXT: owner runs v25.2 once into the POV, sends Downloads/ewdx-boot*.log
-  + ewdx-dump-buf{2,5,6}.bmp → read buf6 (staging) vs buf5 (composite)
-  and fix the corner-black for real (v25.3).
+  moving (was 1) — but black box on the corners of the circle PERSISTS.- 2026-09-23 (session G, v25.2-diag): pixel forensics
+(`analysis/v252_evidence/`, 14 scripts committed) — corners are OPAQUE
+black plate (not night scene 45,45,45), v24.1 showed scene through;
+ring shrank inside the plate after the primitive rewrite; mot decode
+(p0 ball / p39 ring / p17 wobble rows y=81..175) + atlas keys check out
+on paper → bug is RUNTIME buffer state, not script semantics. v25.2 =
+DIAG build: at the first buffer-5→scene maw copy dumps buffers
+6/2/5 as BMPs (24bpp) into Downloads (`ewdx-dump-buf{2,5,6}.bmp`, one
+set per run) via a new `ewdx_boot_dump_binary()` MediaStore mirror +
+journals the [prim] draw stream; EWDX_MAW_DUMP define; prim cap
+512→4096 (wobble-loop cap-trip reports ~2s lag). Shipped
+`~/Downloads/ewdx-v252-maw-dump.apk`, pushed to apks repo (bae7aac).
+Build env rebuilt on fresh RDP box: sibling checkouts re-cloned per
+refs.md pins, assets+start.ax extracted from shipped v25.1 APK into
+android/app/src/main/assets, local.properties written (forward-slash
+sdk.dir — backslash form breaks AGP SdkLocator), debug.keystore made.
+NEW GitHub token from owner verified + stored (~/.git-credentials).
+NEXT: owner runs v25.2 once into the POV, sends Downloads/ewdx-boot*.log
++ ewdx-dump-buf{2,5,6}.bmp → read buf6 (staging) vs buf5 (composite)
+and fix the corner-black for real (v25.3).
+- 2026-09-25 (session H/H.1, v25.3-diag → v25.4): videos analyzed (see
+  analysis/session-2026-09-25-v253-maw-diag.md): interior red parity EXACT;
+  corner-black structural, per-quarter; Android ring smaller in plate.
+  v25.3-diag shipped (hardened dump trigger, present dumps, [prim] journal
+  actually coded, DGCLEAR witness, ADD-time-target prim fix). Owner logs
+  confirmed diag works (93 dump lines/run); v25.4 shipped: POINT sampling
+  (owner-confirmed "way more detail and glossy"), per-episode dump
+  re-arming, readback Y-mirror fix (avgRGB=765 artifact), budgets 200k/40k.
+  NEW: tools/hmm_spy — x86 forwarding spy for the PC game's hmm.dll
+  (gen_spy_c.py + zig cc), logs DG* stream in port vocabulary, ring-flush
+  on DGGCOPY 5; PC-truth-vs-port diff is the path to the mask-quarter fix.
+  Both APKs: ~/Downloads/ewdx-v25{3,4}-*.apk; NOT in apks repo yet.
+  NEXT: owner PC spy run + Android v25.4 BMPs → v25.5 mask-quarter fix.
