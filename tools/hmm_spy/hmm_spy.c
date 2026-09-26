@@ -85,11 +85,11 @@ __declspec(dllexport) void __stdcall DGBUFFER(int a0, int a1, int a2, int a3) {
     F4 f = (F4)realfn("_DGBUFFER@16");
     if (f) f(a0, a1, a2, a3);
 }
-__declspec(dllexport) void __stdcall DGCLEAR(void) {
+__declspec(dllexport) void __stdcall DGCLEAR(int a0, int a1, int a2, int a3) {
     logf("[pc-maw] DGCLEAR");
-    typedef void (__stdcall *F0)(void);
-    F0 f = (F0)realfn("_DGCLEAR@16");
-    if (f) f();
+    typedef void (__stdcall *F4)(int,int,int,int);
+    F4 f = (F4)realfn("_DGCLEAR@16");
+    if (f) f(a0, a1, a2, a3);
 }
 __declspec(dllexport) void __stdcall DGCOLOR(int a0, int a1, int a2, int a3) {
     logf("[pc-maw] DGCOLOR %d %d %d %d", a0,a1,a2,a3);
@@ -103,11 +103,11 @@ __declspec(dllexport) void __stdcall DGCREATEPRIMITIVE(int a0, int a1, int a2, i
     F4 f = (F4)realfn("_DGCREATEPRIMITIVE@16");
     if (f) f(a0, a1, a2, a3);
 }
-__declspec(dllexport) void __stdcall DGDRAWPRIMITIVE(void) {
+__declspec(dllexport) void __stdcall DGDRAWPRIMITIVE(int a0, int a1, int a2, int a3) {
     logf("[pc-prim] DGDRAWPRIMITIVE");
-    typedef void (__stdcall *F0)(void);
-    F0 f = (F0)realfn("_DGDRAWPRIMITIVE@16");
-    if (f) f();
+    typedef void (__stdcall *F4)(int,int,int,int);
+    F4 f = (F4)realfn("_DGDRAWPRIMITIVE@16");
+    if (f) f(a0, a1, a2, a3);
 }
 __declspec(dllexport) void __stdcall DGGCOPY(int a0, int a1, int a2, int a3) {
     logf("[pc-maw] DGGCOPY id=%d flags=0x%x", a0,a1);
@@ -144,11 +144,11 @@ __declspec(dllexport) void __stdcall DGRECT(int a0, int a1, int a2, int a3) {
     F4 f = (F4)realfn("_DGRECT@16");
     if (f) f(a0, a1, a2, a3);
 }
-__declspec(dllexport) void __stdcall DGREDRAW(void) {
+__declspec(dllexport) void __stdcall DGREDRAW(int a0, int a1, int a2, int a3) {
     logf("[pc] DGREDRAW");
-    typedef void (__stdcall *F0)(void);
-    F0 f = (F0)realfn("_DGREDRAW@16");
-    if (f) f();
+    typedef void (__stdcall *F4)(int,int,int,int);
+    F4 f = (F4)realfn("_DGREDRAW@16");
+    if (f) f(a0, a1, a2, a3);
 }
 __declspec(dllexport) void __stdcall DGSCALEANDANGLE(int a0, int a1, int a2, int a3) {
     logf("[pc-maw] DGSCALEANDANGLE %d %d %d sc=(%.2f,%.2f)", a0,a1,a2,a0/256.0,a1/256.0);

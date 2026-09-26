@@ -6,7 +6,40 @@
 > Deeper context lives in `GUIDE.md` (how/why), `ewdx_ndk/README.md` (module map),
 > and `analysis/session-*.md` (per-day forensic logs).
 >
-> Last updated: **2026-09-25 (session H.1, v25.4 point-sampler)** — v25.3
+> Last updated: **2026-09-26 (session I, v25.5 dest-center prims)** —
+> PC SQUEEZE TRUTH CAPTURED WITH THE SPY + ROOT CAUSE FIXED.
+> hmm_spy rebuilt with two export fixes (ALL 114 exports stdcall 4-int
+> with DECORATED names: the AX binds _NAME@16 x4 — bare (void) exports
+> caused HSP #Error 38 at first DGCLEAR; hmm_spy.def pins the leading
+> underscore zig/LLVM strips). Drove the PC game (gallery → DELTA →
+> swallow → unpause toolbar-0; POV needs vore>0+stom_n!=0+stomach=1+
+> v_zoom_f=1 — putstom only runs when gl_play!=0, a paused run never
+> composites). Captured one full POV frame + the wobble waveform
+> (row0 dest_w 104,103,105,119... held ~8-13 frames at 0.5x, left edge
+> FIXED at amp/2 — the heartbeat). Then a vertex-ring probe build read
+> the REAL D3D9 quads (ctx 0x92cc8, ring +0x1480/+0x1484):
+> [pc-q] rect=(0,101 34x2) pos=(17.0,1.0) raw=(32.0,2.0) -> L=1.5 R=33.5
+> = the real FUN_10002550 centers flag&1 prims by the DEST size
+> (x0 = pos - dest_w/2 + 0.5 D3D half-pixel). The port centered by the
+> SOURCE rect size -> both edges slid l/2 = the owner's "slap"; dest
+> centering pins the outer edge (R = pos+src/2-0.5 const) = "squeeze".
+> v25.5 fix in ewdx_drawprim (dw_dst/dh_dst per FUN_10002550); numeric
+> sweep 0 mismatches vs the captured quads; aarch64 gate green;
+> full APK built on the fresh box (env rebuilt: sibling checkouts at
+> refs.md pins — note on THIS box they live at ~/ (repo root is
+> ~/Documents, so ../../../../../../ from cpp/ = home), 593 assets
+> staged from game_pc, local.properties, debug.keystore) and shipped
+> ~/Downloads/ewdx-v255-dest-center-prim.apk (56,813,481 B, start.ax
+> 764,226 B + 590 data files verified inside). Spy rebuilt lean
+> (probe removed, ring-flush design) and left in game_pc/ with the
+> game copy for future PC captures. Probe-run NOTE: the vertex-probe
+> builds hit HSP #Error 38 twice mid-staging (likely probe I/O timing
+> on the hot path); the lean spy ran the same scene clean.
+> NEXT: owner installs v25.5 on device, runs the DELTA swallow POV,
+> confirms squeeze-vs-slap; if corners black persists, the mask-quarter
+> audit continues with the spy [pc-dump] frames (full stream kept in
+> game_pc/hmm_spy.log, 500MB+).
+> (session H.1, v25.4 point-sampler) — v25.3
 > owner logs + screenshot: POINT SAMPLING SHIPPED (owner: "way more detail
 > and glossy") — D3D9's default point filter vs the port's GL_LINEAR was
 > the "PC crisp / Android blurry" gap; ewdx_buffer + both DGLOADMEMORY
@@ -234,6 +267,16 @@ Video tooling: ffmpeg NOT installed. Use Python `opencv-python-headless`
    repo as the only durable memory).
 
 ### Session log
+- 2026-09-26 (session I): PC spy fixed (export decoration + .def pinning),
+  PC squeeze POV captured live (gallery DELTA swallow path; pause lesson),
+  wobble waveform extracted, vertex-ring probe captured the REAL D3D9 prim
+  quads -> root cause: prim centering must use DEST size (FUN_10002550
+  verbatim), not source. v25.5 fix applied + verified numerically vs the
+  captured quads (0 mismatches), gate green, APK rebuilt on this box
+  (full env restored) and shipped to Downloads as
+  ewdx-v255-dest-center-prim.apk. Session doc:
+  analysis/session-2026-09-26-pc-squeeze-truth.md. PC game copy + lean
+  spy remain in game_pc/ for future captures.
 - 2026-09-22 (session A): repo fully re-read (all sources/docs/tools/vm diffs).
   MEMORY.md created + pushed as the recall heartbeat. No code changes yet.
 - 2026-09-22 (session B): v20 pivot fix reconstructed from the v20 binary

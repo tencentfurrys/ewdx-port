@@ -1,0 +1,48 @@
+﻿* Overture
+ The title screen song.
+ Our games always have quiet title screens.
+ This time, it contains hints of the Orient, 
+ but is mainly a fantasy kind of song.
+　
+
+* Journey into the Night
+ The BGM for Stage 1. 
+ Some may be familiar with it from our previous works.
+　Setting off on a journey into the ECHIDNA rampant night.
+ You could say that it's Mirea's theme song.
+ After doing something certain in the game, 
+ if you return to the starting location, things aint pretty...
+
+
+* Yggdrasil -Root of the World-
+ The BGM for Stage 2. Foot of the World Tree.
+ You are aiming for Yggdrasil... or not. Rather a hornet's nest.
+ With forests barely penetrated by the hands of humanity, 
+ it's a new frontier for residential development by monsters.
+
+
+* Sacred to the Darkness
+　The BGM for Stage 3. A place consecrated for non-humans.
+　The great ECHIDNA stone on a nameless mountain is considered 
+ a sacred place by monsters and the final battleground by humanity.
+　In the last part, the enemy onslaught is pretty fierce, 
+ so in sync with that the BGM grows ever more intense.
+
+
+* Awaken One
+　Generic Boss BGM. The Awoken Dog.
+　It utilizes a 5-beat rhythm, so it should fit the creepy, 
+ anxious feeling towards the 'UNKNOWN' identity of this boss.
+ You could say that the base and other low tones are the focus.
+
+
+* Awaken Deep Ones
+　The Last Boss BGM. Why hath you not let sleeping dogs lie.
+ Compared to the generic boss BGM, the intro of this BGM 
+ is solemn and grave laden with a heavy dollop of doom.
+ With a bit of glisten, it feels appropriate for a Last Boss BGM.
+
+
+* Creators
+ Ending BGM. The people that created this game.
+　Thank you very much for playing to the end.

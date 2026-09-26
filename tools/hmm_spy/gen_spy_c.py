@@ -1,5 +1,19 @@
 # Generate hmm_spy.c — full x86 forwarding spy for hmm.dll.
-# Compile: python -m ziglang cc -target i386-windows-gnu -shared -O2 -o hmm.dll hmm_spy.c
+# Compile: python -m ziglang cc -target x86-windows-gnu -shared -O2 -o hmm.dll hmm_spy.c hmm_spy.def
+#
+# v25.5 spy fixes (session I, 2026-09-26):
+#   1. ALL exports are stdcall(4 ints) with DECORATED names — the AX binds
+#      every hmm call as _NAME@16 with 4 int pushes (see start_ax_dump.hsp
+#      #func lines), so bare (void) exports never resolve: the game dies
+#      with HSP #Error 38 on the first DGCLEAR.
+#   2. hmm_spy.def pins the export names: zig/LLVM strips the leading
+#      underscore on @16 exports (DGCLEAR@16 instead of _DGCLEAR@16); the
+#      .def maps _NAME@16 = NAME@16 so all 114 decorated names survive.
+#   3. Flushes per [pc-dump] FLUSH on DGGCOPY 5 (POV composite) as before.
+# Session-I evidence collected with a temporary vertex-ring probe build:
+#   the real FUN_10002550 centers flag&1 prims by the DEST size
+#   (x0 = pos - dest_w/2, +0.5 D3D half-pixel) — captured as
+#   [pc-q] rect=(0,101 34x2) pos=17 raw=32 -> L=1.5 R=33.5.
 import os
 
 CUSTOM = {
@@ -19,7 +33,6 @@ CUSTOM = {
     "DGREDRAW":     '[pc] logf("[pc] DGREDRAW")',
     "DGLINE":       '[pc] logf("[pc-maw] DGLINE %d %d -> %d %d", a0,a1,a2,a3)',
 }
-ZEROARG = {"DGCLEAR", "DGDRAWPRIMITIVE", "DGREDRAW"}
 
 names = [l.strip() for l in open("hmm_names.txt") if l.strip().endswith("@16")]
 plain = [n for n in names if n[1:-3] not in CUSTOM]
@@ -100,30 +113,26 @@ w("/* ---- logged custom handlers ---- */")
 for n in custom:
     base = n[1:-3]
     logline = CUSTOM[base]
-    # translate the [pc] marker
     logline = logline[len("[pc] "):]
-    if base in ZEROARG:
-        w("__declspec(dllexport) void __stdcall %s(void) {" % base)
+    # HSP always binds ALL hmm exports as _NAME@16 with 4 pushed args
+    # (even DGCLEAR/DGDRAWPRIMITIVE/DGREDRAW: the AX #func lines say
+    # "int,int,int,int"), so every spy export must be stdcall(4 ints) with
+    # the decorated export name -- a bare (void) export would never resolve
+    # and the game dies with #Error 38 on the first DGCLEAR.
+    w("__declspec(dllexport) void __stdcall %s(int a0, int a1, int a2, int a3) {" % base)
+    if base == "DGGCOPY":
         w("    %s;" % logline)
-        w("    typedef void (__stdcall *F0)(void);")
-        w('    F0 f = (F0)realfn("%s");' % n)
-        w("    if (f) f();")
-        w("}")
+        w("    if (a0 == 5) {")
+        w("        g_ep++;")
+        w('        logf("[pc-dump] FLUSH ep=%u t=%llu", g_ep, g_tick);')
+        w("        flush_ring();")
+        w("    }")
     else:
-        w("__declspec(dllexport) void __stdcall %s(int a0, int a1, int a2, int a3) {" % base)
-        if base == "DGGCOPY":
-            w("    %s;" % logline)
-            w("    if (a0 == 5) {")
-            w("        g_ep++;")
-            w('        logf("[pc-dump] FLUSH ep=%u t=%llu", g_ep, g_tick);')
-            w("        flush_ring();")
-            w("    }")
-        else:
-            w("    %s;" % logline)
-        w("    typedef void (__stdcall *F4)(int,int,int,int);")
-        w('    F4 f = (F4)realfn("%s");' % n)
-        w("    if (f) f(a0, a1, a2, a3);")
-        w("}")
+        w("    %s;" % logline)
+    w("    typedef void (__stdcall *F4)(int,int,int,int);")
+    w('    F4 f = (F4)realfn("%s");' % n)
+    w("    if (f) f(a0, a1, a2, a3);")
+    w("}")
 w("")
 w("/* ---- plain forwarders ---- */")
 for n in plain:

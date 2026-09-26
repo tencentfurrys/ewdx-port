@@ -17,3 +17,5 @@ build/
 .cxx/
 .gradle/
 local.properties
+*.log
+.freebuff/

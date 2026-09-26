@@ -718,9 +718,26 @@ int ewdx_drawprim(void) {
         // batch — the only behavioral change in this build).
         if (q->tgt != ewdx.target) ewdx_select(q->tgt);
         float dx = (float)q->posx, dy = (float)q->posy;
-        if (q->flags & 1) {  // centered: DGPOS is the quad CENTER
-            dx -= dw * K_HALF;
-            dy -= dh * K_HALF;
+        // v25.5: FUN_10002550 verbatim (PC hmm.dll disassembly, session I):
+        // flag&1 centering uses the DEST size -- raw DGSCALEANDANGLE px when
+        // flag&2 (mov ecx,[esp+0x10]; fsub [esp+0x14] @0x2662), else
+        // source*scale (fmul 8.8 @0x2654). v25 centered by the SOURCE rect
+        // size, so the wobble scanlines (dest w = source + sinusoid) slid
+        // BOTH edges symmetrically = the Android "slap"; the PC pins the
+        // outer edge (pos - d/2, then scale about the source pivot) = the
+        // "heartbeat" squeeze. emit_quad's pivx = dx + src_w/2 then
+        // reproduces FUN_10002550's &4 pivot exactly.
+        float dw_dst, dh_dst;
+        if (q->flags & 2) {
+            dw_dst = q->scx;                  // raw px, NOT /256
+            dh_dst = q->scy;
+        } else {
+            dw_dst = dw * q->scx * (1.0f / 256.0f);
+            dh_dst = dh * q->scy * (1.0f / 256.0f);
+        }
+        if (q->flags & 1) {  // centered: DGPOS is the DEST quad CENTER
+            dx -= dw_dst * K_HALF;
+            dy -= dh_dst * K_HALF;
         }
         // flag&2 dest semantics: dest dims = raw DGSCALEANDANGLE px
         float scx = (q->flags & 2) ? (q->scx / dw) : (q->scx * (1.0f / 256.0f));
