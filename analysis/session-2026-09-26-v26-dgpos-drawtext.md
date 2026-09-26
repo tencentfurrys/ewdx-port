@@ -96,3 +96,30 @@ The (C) line at (490,466) with font size 12 renders ~176px wide: 490+176
 = 666 > 640, so the PC original CLIPS the right edge of "(C) 2016
 D-Gate/ASIMOFU" — expected; the port's text path must clip identically
 (it renders into the same 640x480 target with the same coords).
+
+## Appendix — session II.1 (v26.1, same day): mono text parity
+Owner v26 test: "ok yes it's fixed one thing tho in level select the
+describes of level is very little visable" (screenshot: description text
+faint gray under the difficulty row; bitmap-font rows crisp white).
+
+Root cause: the text path used TTF_RenderUTF8_Blended = 8-bit ANTI-
+ALIASED coverage. At 12 px, thin strokes carry ~50% alpha; the alpha-
+blended draw over the dark scene + the buffer-5 x2 NEAREST upscale left
+the words as translucent gray mush. The PC path is GDI TextOut with
+MS Gothic = 1-BIT rasterization (binary on/off glyphs) — full-intensity
+strokes that survive the upscale crisp.
+
+Fix (v26.1, tag v26.1-2026-09-26-mono-text), ewdx_text.cpp:
+- TTF_RenderUTF8_Solid + TTF_SetFontHinting(TTF_HINTING_MONO):
+  SDL_ttf's Solid pipeline rasterizes via FT_RENDER_MODE_MONO (1-bit)
+  and OR-blits binary coverage — verified in the pinned SDL_ttf source
+  (Create_Surface_Solid INDEX8 + FT_RENDER_MODE_MONO branch).
+- INDEX8 surfaces mapped to binary alpha (glyph=255 / bg=0), white RGB,
+  tint still from vertex color (DGCOLOR).
+- Text textures now GL_NEAREST (v25.4 point-sampling parity; GDI blits
+  are unfiltered).
+Gate green; assembleDebug green; tag verified in libmain.so.
+Shipped ~/Downloads/ewdx-v261-mono-text.apk (57,421,697 B).
+NOTE: text now = hard-edged mono like PC; if the owner later wants the
+text BIGGER on high-DPI screens, that is a display-scale question, not
+a glyph-quality one — do not reintroduce AA to "soften".

@@ -6,7 +6,16 @@
 > Deeper context lives in `GUIDE.md` (how/why), `ewdx_ndk/README.md` (module map),
 > and `analysis/session-*.md` (per-day forensic logs).
 >
-> Last updated: **2026-09-26 (session II, v26 DGDRAWTEXT-at-DGPOS)** —
+> Last updated: **2026-09-26 (session II.1, v26.1 mono text)** —
+> v26 DGPOS fix OWNER-CONFIRMED ("it's fixed"), one follow-up: difficulty
+> descriptions rendered "very little visible" — the TTF Blended (gray-AA)
+> glyphs at 12px are ~50% alpha on thin strokes and wash out through the
+> buffer-5 x2 upscale. v26.1: TTF_RenderUTF8_Solid + TTF_HINTING_MONO =
+> 1-bit mono glyphs (GDI TextOut/MS-Gothic parity, same as PC), binary
+> alpha 0/255, NEAREST text textures (v25.4 point-sampling parity). All
+> DGDRAWTEXT output game-wide is now hard-edged like PC. Shipped
+> ~/Downloads/ewdx-v261-mono-text.apk (57,421,697 B, tag verified).
+> (session II, v26 DGDRAWTEXT-at-DGPOS) —
 > OWNER CONFIRMED v25.6 corners fix works (alpha test parity). Next bugs
 > FIXED in v26: (1) title guide text "floating" over the menu instead of
 > at the bottom, (2) difficulty description ("Standard level for Gamer")
@@ -299,6 +308,11 @@ Video tooling: ffmpeg NOT installed. Use Python `opencv-python-headless`
    repo as the only durable memory).
 
 ### Session log
+- 2026-09-26 (session II.1): owner confirmed v26 text positions; faint
+  description text fixed in v26.1 (Blended gray-AA -> Solid 1-bit mono
+  glyphs, GDI parity; NEAREST text textures). APK:
+  ~/Downloads/ewdx-v261-mono-text.apk. Doc:
+  analysis/session-2026-09-26-v26-dgpos-drawtext.md (appendix).
 - 2026-09-26 (session II): owner confirmed v25.6 corners fix; reported
   floating title guide text + missing difficulty description. Root cause:
   DGDRAWTEXT drew at its int args (HSP padding, always "320,240") instead

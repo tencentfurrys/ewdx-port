@@ -19,7 +19,7 @@
 
 // Bump per shipped build; journaled right after "=== run ===" so every
 // collected log positively identifies the binary that produced it.
-#define EWDX_BUILD_TAG "v26-2026-09-26-dgpos-drawtext"
+#define EWDX_BUILD_TAG "v26.1-2026-09-26-mono-text"
 
 #include <stdio.h>
 #include <stdlib.h>

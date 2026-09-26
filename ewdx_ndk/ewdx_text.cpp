@@ -125,6 +125,12 @@ static TTF_Font *font_for_size(int size) {
         while (*p != NULL) {
             TTF_Font *f = TTF_OpenFont(*p, size);
             if (f != NULL) {
+                // v26.1: GDI TextOut parity (PC DGDRAWTEXT = MS Gothic via GDI):
+                // 1-bit monochrome rasterization (FT_LOAD_TARGET_MONO ->
+                // FT_RENDER_MODE_MONO in SDL_ttf's Solid pipeline). Blended
+                // (gray AA) text at 12px reads ~50% alpha on thin strokes and
+                // turns into faint gray mush after the buffer-5 x2 upscale.
+                TTF_SetFontHinting(f, TTF_HINTING_MONO);
                 fonts[victim].font = f;
                 fonts[victim].size = size;
                 fonts[victim].age = age_ctr++;
@@ -187,46 +193,73 @@ int ewdx_text_draw(const char *sjis, int x, int y) {
     key = fnv1a(utf8) ^ ((uint64_t)(uint32_t)font_cur_size << 32) ^ ((uint64_t)rgba << 1);
     e = cache_lookup(key);
     if (!e->used) {
-        // render white glyphs; tint comes from the vertex color at draw
+        // v26.1: SOLID render = 1-bit mono glyphs (GDI TextOut parity); the
+        // tint comes from the vertex color at draw. Binary alpha (0 or 255)
+        // so thin strokes stay FULLY white through the x2 buffer upscale —
+        // the old Blended path dimmed them to gray (owner: "very little
+        // visible" on the difficulty descriptions).
         SDL_Color white = { 255, 255, 255, 255 };
         int W, H;
-        sf = TTF_RenderUTF8_Blended(font, utf8, white);
+        sf = TTF_RenderUTF8_Solid(font, utf8, white);
         if (sf == NULL) return -1;
-        cv = SDL_ConvertSurfaceFormat(sf, SDL_PIXELFORMAT_ABGR8888, 0);
-        SDL_FreeSurface(sf);
-        if (cv == NULL) return -1;
-        W = cv->w; H = cv->h;
+        if (sf->format->BytesPerPixel == 1) {
+            // INDEX8 solid surface: index 0 = background (colorkey), else fg.
+            cv = NULL;
+        } else {
+            cv = SDL_ConvertSurfaceFormat(sf, SDL_PIXELFORMAT_ABGR8888, 0);
+            if (cv == NULL) { SDL_FreeSurface(sf); return -1; }
+        }
+        W = sf->w; H = sf->h;
         if (W <= 0 || H <= 0 || W > 2048 || H > 512) {
-            SDL_FreeSurface(cv);
+            if (cv) SDL_FreeSurface(cv);
+            SDL_FreeSurface(sf);
             return -1;
         }
         // top-down rows (TTF surfaces are not BMP-flipped); memory RGBA order
         {
-            int pitch = cv->pitch;
-            uint8_t *base = (uint8_t *)cv->pixels;
+            int pitch = (cv != NULL) ? cv->pitch : sf->pitch;
+            uint8_t *base = (uint8_t *)((cv != NULL) ? cv->pixels : sf->pixels);
             uint8_t *flat = (uint8_t *)SDL_malloc((size_t)W * (size_t)H * 4u);
             int yy;
-            if (flat == NULL) { SDL_FreeSurface(cv); return -1; }
-            if (cv->format->BytesPerPixel != 4) {
-                SDL_free(flat); SDL_FreeSurface(cv); return -1;
+            if (flat == NULL) {
+                if (cv) SDL_FreeSurface(cv);
+                SDL_FreeSurface(sf);
+                return -1;
+            }
+            if (cv != NULL && cv->format->BytesPerPixel != 4) {
+                SDL_free(flat); SDL_FreeSurface(cv); SDL_FreeSurface(sf);
+                return -1;
             }
             for (yy = 0; yy < H; yy++) {
                 uint8_t *srow = base + (size_t)yy * (size_t)pitch;
                 uint8_t *drow = flat + (size_t)yy * (size_t)W * 4u;
-                for (int xx = 0; xx < W; xx++) {
-                    uint32_t v;
-                    uint8_t r, g, b, a;
-                    memcpy(&v, srow + xx * 4, 4);
-                    SDL_GetRGBA(v, cv->format, &r, &g, &b, &a);
-                    drow[xx * 4 + 0] = r; drow[xx * 4 + 1] = g;
-                    drow[xx * 4 + 2] = b; drow[xx * 4 + 3] = a;
+                if (cv != NULL) {
+                    for (int xx = 0; xx < W; xx++) {
+                        uint32_t v;
+                        uint8_t r, g, b, a;
+                        memcpy(&v, srow + xx * 4, 4);
+                        SDL_GetRGBA(v, cv->format, &r, &g, &b, &a);
+                        drow[xx * 4 + 0] = r; drow[xx * 4 + 1] = g;
+                        drow[xx * 4 + 2] = b; drow[xx * 4 + 3] = a;
+                    }
+                } else {
+                    // 1-bit mono mapped to binary alpha: glyph = white/opaque
+                    for (int xx = 0; xx < W; xx++) {
+                        uint8_t on = srow[xx];
+                        drow[xx * 4 + 0] = 255; drow[xx * 4 + 1] = 255;
+                        drow[xx * 4 + 2] = 255;
+                        drow[xx * 4 + 3] = (on != 0) ? 255 : 0;
+                    }
                 }
             }
-            SDL_FreeSurface(cv);
+            SDL_FreeSurface(sf);
+            if (cv) SDL_FreeSurface(cv);
             glGenTextures(1, &e->tex);
             glBindTexture(GL_TEXTURE_2D, e->tex);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            // v25.4 point-sampling parity applies to text too (GDI blits are
+            // unfiltered; the x2 buffer upscale is the game-art NEAREST path)
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, W, H, 0, GL_RGBA,
