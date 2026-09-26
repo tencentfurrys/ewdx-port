@@ -29,10 +29,22 @@ static const char *VS_SRC =
 static const char *FS_SRC =
     "precision mediump float;\n"
     "uniform sampler2D u_tex;\n"
+    "uniform float u_alphatest;\n"   // 0.0 = off; n/255 = D3D9 ALPHAREF
     "varying vec2 v_uv;\n"
     "varying vec4 v_col;\n"
     "void main() {\n"
-    "  gl_FragColor = texture2D(u_tex, v_uv) * v_col;\n"
+    "  vec4 c = texture2D(u_tex, v_uv) * v_col;\n"
+    // v25.6: D3D9 alpha-test parity. The real hmm.dll runs EVERY draw with
+    // ALPHATESTENABLE=TRUE, ALPHAFUNC=GREATEREQUAL(7), ALPHAREF=1
+    // (@0x1000164c..0x100016cb: SetRenderState(27,1) blend-on,
+    // (0x18=ALPHAREF,0xff000001 -> ref 1), (0xf=ALPHATESTENABLE,1),
+    // (0x19=ALPHAFUNC,7)). Game art is 24-bit BMP (no alpha): all sprite
+    // transparency = colorkey black -> a=0 -> killed by the alpha test
+    // BEFORE blending. The porthole mask's black corner plate (a=0) can
+    // never reach the mode-3 blender on PC; the port (no alpha test)
+    // multiplied the scene down with its white RGB = the corner-black.
+    "  if (c.a < u_alphatest) discard;\n"
+    "  gl_FragColor = c;\n"
     "}\n";
 
 static GLuint compile_shader(GLenum type, const char *src) {
@@ -220,6 +232,7 @@ int ewdx_screen(int w, int h, int mode) {
         ewdx.a_uv = glGetAttribLocation(ewdx.prog, "a_uv");
         ewdx.a_col = glGetAttribLocation(ewdx.prog, "a_col");
         ewdx.u_tex = glGetUniformLocation(ewdx.prog, "u_tex");
+        ewdx.u_alphatest = glGetUniformLocation(ewdx.prog, "u_alphatest");
         glGenBuffers(1, &ewdx.vbo);
         glEnable(GL_BLEND);
         ewdx_apply_blend(EWDX_BLEND_ALPHA);
@@ -410,6 +423,14 @@ int ewdx_apply_blend(int mode) {
     // the alpha half of modes 0/3/4/5 (maw black-box bug).
     glBlendFuncSeparate(BLEND_RGB_SRC[mode], BLEND_RGB_DST[mode],
                         BLEND_A_SRC[mode], BLEND_A_DST[mode]);
+    // v25.6: D3D9 alpha-test parity — ALWAYS ON for every draw, exactly like
+    // the real DLL's init state: ALPHATESTENABLE=TRUE (0x100016bc),
+    // ALPHAFUNC=GREATEREQUAL (0x100016cb), ALPHAREF=1 (0x100016a8,
+    // 0xff000001 masked to 1). Fragment passes iff alpha >= 1/255.
+    // GLES2 has no glAlphaFunc -> uniform discard in the shader.
+    if (ewdx.u_alphatest >= 0) {
+        glUniform1f(ewdx.u_alphatest, 1.0f / 255.0f);
+    }
     return -1;
 }
 

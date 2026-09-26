@@ -6,7 +6,23 @@
 > Deeper context lives in `GUIDE.md` (how/why), `ewdx_ndk/README.md` (module map),
 > and `analysis/session-*.md` (per-day forensic logs).
 >
-> Last updated: **2026-09-26 (session I, v25.5 dest-center prims)** —
+> Last updated: **2026-09-26 (session I.2, v25.6 alpha-test parity)** —
+> OWNER CONFIRMED v25.5 squeeze fix works; corners STILL black →
+> NEW RE: the real hmm.dll runs EVERY draw with D3D9 ALPHA TEST on
+> (ALPHAREF=1 @0x100016a8, ALPHATESTENABLE=TRUE @0x100016bc,
+> ALPHAFUNC=GREATEREQUAL(7) @0x100016cb — push order: value,state,device).
+> system.bmp is 24-bit (no alpha): ALL transparency = colorkey black→a=0
+> at DGLOADMEMORY, then the alpha test kills those pixels BEFORE blend.
+> Porthole mask quarter = WHITE TL triangle + black rest; assembled 4x
+> = white CORNERS + transparent disc. Mode 3 blacks the corners + carves
+> their alpha; final id=5 mode-0 copy on PC is GATED by the alpha test
+> (corner a=0 → killed → scene shows through). Port had no gate → the
+> mode-0 ONE/ZERO row painted corner RGB (black) over the scene. v25.6:
+> shader `if (c.a < u_alphatest) discard;` + uniform 1/255 always on
+> (ewdx_gles.cpp). Everything colorkeyed now discards game-wide like D3D9.
+> Shipped ~/Downloads/ewdx-v256-alphatest.apk + apks repo cfbd8a5.
+> REPO: owner token pushed everything (master 6e666d6 + apks d009a5b).
+> (session I, v25.5 dest-center prims) —
 > PC SQUEEZE TRUTH CAPTURED WITH THE SPY + ROOT CAUSE FIXED.
 > hmm_spy rebuilt with two export fixes (ALL 114 exports stdcall 4-int
 > with DECORATED names: the AX binds _NAME@16 x4 — bare (void) exports

@@ -153,6 +153,46 @@ If it recurs with the lean spy, revisit; the probe has served its purpose.
   flags=0 (NOT composites), and `DGREDRAW/DGEND` never appear per-frame
   (present chain is DGREDRAW only at frame end, [pc] journal).
 
+## v25.6 (same day, owner report: squeeze FIXED, corners STILL black)
+
+Owner confirmed the v25.5 squeeze fix works. Corner-black persisted → new
+RE pass on the real DLL found the missing gate:
+
+**D3D9 alpha test, always on** (init block @0x1000164c..0x100016cb):
+- `SetRenderState(0x18=ALPHAREF, 0xff000001)` → ref = 1
+- `SetRenderState(0xf=ALPHATESTENABLE, 1)` → TRUE
+- `SetRenderState(0x19=ALPHAFUNC, 7)` → D3DCMP_GREATEREQUAL
+- Fragment passes iff `src.a >= 1/255`; colorkeyed (a=0) pixels are
+  killed BEFORE blending, in every draw, in every mode.
+- (hmm internal paths retune the ref — 0x7f @0x10039dc6, 0x0f
+  @0x10039dad — but the script-visible init state is ref 1.)
+
+Why this is the corner-black (full pixel chain, verified on the asset):
+1. `system.bmp` is 24-bit (NO alpha anywhere). Transparency exists only
+   via the D3DX colorkey (black → a=0) applied at DGLOADMEMORY upload.
+2. The mask quarter (system.bmp 242,72 40x40) = WHITE top-left
+   triangle + BLACK elsewhere (edge x=34..39 white; assembled 4× mirror
+   = white CORNERS, colorkeyed-transparent disc — the porthole).
+3. Mode 3 (ZERO, INVSRCCOLOR) on the white corner pixels: dst·(1−1)=0
+   → black, opaque. On the disc interior: killed by the alpha test
+   before the blend (a=0) → no-op.
+4. Final `DGGCOPY 5,1` (mode 0 = ONE/ZERO): on PC the corner pixels
+   (a=0 after step 3's alpha carve) are killed by the alpha test →
+   SCENE SHOWS THROUGH. Disc pixels (a=255) draw opaque.
+   Port (no alpha test): mode 0 paints the corner plate RGB over the
+   scene unconditionally → the black corners.
+
+Fix (v25.6): fragment shader gains `uniform float u_alphatest;`
+`if (c.a < u_alphatest) discard;` with 1/255 set once in
+ewdx_apply_blend (always on, all modes — the D3D9 init state).
+GLES gate green; APK shipped as ~/Downloads/ewdx-v256-alphatest.apk
+(also in the apks repo, commit cfbd8a5).
+
+Note: with the test on, EVERY colorkeyed-black pixel game-wide now
+discards like D3D9 (feather/stage art with black cutouts, additive
+beams' dark fringes) — closer to PC everywhere, and mode 2 additive
+stops adding invisible black halos.
+
 ## Next session checklist
 
 1. Run Android v25.4 into the same DELTA swallow POV; capture ewdx-boot log.

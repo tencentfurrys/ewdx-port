@@ -61,6 +61,7 @@ typedef struct {
     GLuint vbo;
     GLint a_pos, a_uv, a_col;
     GLint u_tex;
+    GLint u_alphatest;        // v25.6: D3D9 ALPHATESTENABLE parity (GREATER), 0=off
 } EwdxGles;
 
 extern EwdxGles ewdx;
