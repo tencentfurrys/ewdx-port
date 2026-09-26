@@ -67,7 +67,13 @@ BOTTOM-right (DGPOS), not mid-screen (args).
 
 ## Shipped
 - ~/Downloads/ewdx-v26-dgpos-drawtext.apk (56,813,745 B)
-- apks repo: ewdx-v26-dgpos-drawtext.apk
+- apks repo: committed locally (8d2a930) but NOT pushed — this fresh box
+  has no ~/.git-credentials (owner token needed, same as session H:
+  "no token on this box"). Push = paste a fresh token into
+  ~/.git-credentials (https://<user>:<token>@github.com), then
+  `git -C ~/Documents/ewdx-port push origin master` and
+  `git -C /tmp/apks push origin main` (or re-clone apks elsewhere and
+  apply the same commit).
 
 ## Owner test protocol
 1. Title: "Z - Enter / X - Back" (englishmode) should sit at the BOTTOM

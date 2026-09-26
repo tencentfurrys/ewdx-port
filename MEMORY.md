@@ -20,7 +20,9 @@
 > mode description. Fix: ewdx_drawtext ignores x/y and draws at the
 > retained DGPOS (m_posx/m_posy) like every other DG draw. Gate green,
 > assembleDebug green, tag verified in libmain.so. Shipped
-> ~/Downloads/ewdx-v26-dgpos-drawtext.apk (56,813,745 B) + apks repo.
+> ~/Downloads/ewdx-v26-dgpos-drawtext.apk (56,813,745 B); apks repo commit
+> 8d2a930 is LOCAL ONLY (no token on this box — push needs a fresh owner
+> token in ~/.git-credentials; master commit 5335a88 same).
 > (session I.2, v25.6 alpha-test parity) —
 > NEW RE: the real hmm.dll runs EVERY draw with D3D9 ALPHA TEST on
 > (ALPHAREF=1 @0x100016a8, ALPHATESTENABLE=TRUE @0x100016bc,
@@ -302,7 +304,8 @@ Video tooling: ffmpeg NOT installed. Use Python `opencv-python-headless`
   DGDRAWTEXT drew at its int args (HSP padding, always "320,240") instead
   of the retained DGPOS. v26 fix in ewdx_drawtext + EWDX_DGDRAWTEXT;
   doc: analysis/session-2026-09-26-v26-dgpos-drawtext.md. Shipped
-  ~/Downloads/ewdx-v26-dgpos-drawtext.apk + apks repo.
+  ~/Downloads/ewdx-v26-dgpos-drawtext.apk; master 5335a88 + apks 8d2a930
+  are LOCAL ONLY (no token on this fresh box — owner push needed).
 - 2026-09-26 (session I): PC spy fixed (export decoration + .def pinning),
   PC squeeze POV captured live (gallery DELTA swallow path; pause lesson),
   wobble waveform extracted, vertex-ring probe captured the REAL D3D9 prim
