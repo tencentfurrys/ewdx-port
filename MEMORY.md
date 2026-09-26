@@ -6,8 +6,22 @@
 > Deeper context lives in `GUIDE.md` (how/why), `ewdx_ndk/README.md` (module map),
 > and `analysis/session-*.md` (per-day forensic logs).
 >
-> Last updated: **2026-09-26 (session I.2, v25.6 alpha-test parity)** —
-> OWNER CONFIRMED v25.5 squeeze fix works; corners STILL black →
+> Last updated: **2026-09-26 (session II, v26 DGDRAWTEXT-at-DGPOS)** —
+> OWNER CONFIRMED v25.6 corners fix works (alpha test parity). Next bugs
+> FIXED in v26: (1) title guide text "floating" over the menu instead of
+> at the bottom, (2) difficulty description ("Standard level for Gamer")
+> never shown. ONE root cause: EWDX_DGDRAWTEXT read its two int args as
+> x/y, but the args are HSP PADDING — all 10 script call sites pass
+> "320, 240" and set DGPOS immediately before (the (C) line even passes
+> args that contradict its own DGPOS, proving args are junk). Port drew
+> at literal (320,240): on the title that is screen center ("floating
+> words"), and on the difficulty screen (buffer 5 = 320x240) it is one
+> pixel off the bottom-right corner = fully clipped = the "missing" game-
+> mode description. Fix: ewdx_drawtext ignores x/y and draws at the
+> retained DGPOS (m_posx/m_posy) like every other DG draw. Gate green,
+> assembleDebug green, tag verified in libmain.so. Shipped
+> ~/Downloads/ewdx-v26-dgpos-drawtext.apk (56,813,745 B) + apks repo.
+> (session I.2, v25.6 alpha-test parity) —
 > NEW RE: the real hmm.dll runs EVERY draw with D3D9 ALPHA TEST on
 > (ALPHAREF=1 @0x100016a8, ALPHATESTENABLE=TRUE @0x100016bc,
 > ALPHAFUNC=GREATEREQUAL(7) @0x100016cb — push order: value,state,device).
@@ -283,6 +297,12 @@ Video tooling: ffmpeg NOT installed. Use Python `opencv-python-headless`
    repo as the only durable memory).
 
 ### Session log
+- 2026-09-26 (session II): owner confirmed v25.6 corners fix; reported
+  floating title guide text + missing difficulty description. Root cause:
+  DGDRAWTEXT drew at its int args (HSP padding, always "320,240") instead
+  of the retained DGPOS. v26 fix in ewdx_drawtext + EWDX_DGDRAWTEXT;
+  doc: analysis/session-2026-09-26-v26-dgpos-drawtext.md. Shipped
+  ~/Downloads/ewdx-v26-dgpos-drawtext.apk + apks repo.
 - 2026-09-26 (session I): PC spy fixed (export decoration + .def pinning),
   PC squeeze POV captured live (gallery DELTA swallow path; pause lesson),
   wobble waveform extracted, vertex-ring probe captured the REAL D3D9 prim

@@ -784,7 +784,16 @@ int ewdx_font(const char *name, int size) {
 }
 
 int ewdx_drawtext(const char *s, int x, int y) {
-    return ewdx_text_draw(s, x, y);
+    // v26: the real DGDRAWTEXT draws at the RETAINED DGPOS. The script's two
+    // int args are HSP padding: ALL 10 call sites pass "320, 240"
+    // (artifacts/start_ax_dump.hsp: draw_guide 2404/2408, BGM rows 28955..,
+    // (C) line 29624). x/y here are ignored; m_posx/m_posy (DGPOS) own the
+    // position, exactly like DGGCOPY/DGRECT. This is why guide text drew at
+    // screen center (the "floating words" bug) and was fully clipped when
+    // buffer 5 (320x240) was the target (the missing difficulty description).
+    (void)x;
+    (void)y;
+    return ewdx_text_draw(s, m_posx, m_posy);
 }
 
 int ewdx_line(int x1, int y1, int x2, int y2) {

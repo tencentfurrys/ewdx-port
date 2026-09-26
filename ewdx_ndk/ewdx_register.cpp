@@ -799,10 +799,16 @@ static int rc_cmdfunc_dllcmd(int cmd) {
         return rc_stat(dg_font(s, sz));
     }
     case EWDX_DGDRAWTEXT: {  // (bmscr auto,str,i,i)
+        // v26: the two int args are HSP padding — every script call site passes
+        // "320, 240" (draw_guide, BGM rows, (C) line). The real DGDRAWTEXT draws
+        // at the retained DGPOS; using the args here put guide text at screen
+        // center ("floating words") and clipped it off buffer 5 (320x240) on the
+        // difficulty screen (missing game-mode description).
         char *s = code_gets();
-        int x = code_getdi(0), y = code_getdi(0);
         code_getdi(0);
-        return rc_stat(dg_drawtext(s, x, y));
+        code_getdi(0);
+        code_getdi(0);
+        return rc_stat(dg_drawtext(s, 0, 0));
     }
     case EWDX_DGADDPRIM: {
         // v25.1: the declared int arg is the DGGCOPY flag word (7=centered

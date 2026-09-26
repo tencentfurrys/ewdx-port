@@ -44,7 +44,9 @@ int ewdx_drawprim(void);                       // DGDRAWPRIMITIVE (immediate flu
 
 // Text (SDL_ttf string cache in ewdx_text.cpp; always -1, menus non-fatal)
 int ewdx_font(const char *name, int size);     // DGFONT
-int ewdx_drawtext(const char *s, int x, int y);// DGDRAWTEXT
+int ewdx_drawtext(const char *s, int x, int y);// DGDRAWTEXT (x/y = HSP padding
+                                               // args, ignored; draws at DGPOS
+                                               // like every DG draw — v26)
 
 int ewdx_line(int x1, int y1, int x2, int y2); // DGLINE (1px perp quad)
 

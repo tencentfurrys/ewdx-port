@@ -31,7 +31,8 @@ int dg_createprim(int n);                       // DGCREATEPRIMITIVE
 int dg_addprim(unsigned flags);                 // DGADDPRIMITIVE: arg = DGGCOPY flag word
 int dg_drawprim(void);                          // DGDRAWPRIMITIVE
 int dg_font(const char *n, int s);              // DGFONT (SDL_ttf string cache)
-int dg_drawtext(const char *s, int x, int y);   // DGDRAWTEXT (immediate quad)
+int dg_drawtext(const char *s, int x, int y);   // DGDRAWTEXT (x/y = script
+                                                // padding args; draws at DGPOS)
 int dg_line(int x1, int y1, int x2, int y2);    // DGLINE
 
 // --- input lifecycle (hmm DI*); state lives in ewdx_input.cpp ---
