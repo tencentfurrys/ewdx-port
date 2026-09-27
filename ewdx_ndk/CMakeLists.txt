@@ -12,6 +12,7 @@ add_library(ewdx STATIC
     ewdx_register.cpp
     ewdx_audio.cpp
     ewdx_input.cpp
+    ewdx_osd.cpp
     ewdx_text.cpp
     ewdx_ovplay.cpp
     ewdx_paths.cpp

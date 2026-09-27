@@ -79,6 +79,7 @@ add_library(ewdx STATIC
     "../../../../../ewdx_ndk/ewdx_register.cpp"
     "../../../../../ewdx_ndk/ewdx_audio.cpp"
     "../../../../../ewdx_ndk/ewdx_input.cpp"
+    "../../../../../ewdx_ndk/ewdx_osd.cpp"
     "../../../../../ewdx_ndk/ewdx_text.cpp"
     "../../../../../ewdx_ndk/ewdx_ovplay.cpp"
     "../../../../../ewdx_ndk/ewdx_paths.cpp"

@@ -69,7 +69,7 @@ int ewdx_sjis_to_utf8(const char *src, char *dst, int cap) {
 typedef struct { int size; TTF_Font *font; int age; } TextFont;
 typedef struct {
     int used;
-    uint64_t key;   // fnv1a(utf8) mixed with size + rgba
+    uint64_t key;   // fnv1a(utf8 line) mixed with size + rgba
     GLuint tex;
     int w, h;
     int age;
@@ -169,16 +169,104 @@ int ewdx_text_font(const char *name, int size) {
     return -1;
 }
 
+// Render one line (must not contain '\n') into the string cache; returns the
+// entry or NULL. Binary-alpha mono glyphs (v26.1 GDI parity).
+static TextEntry *text_line_entry(TTF_Font *font, const char *line, uint32_t rgba) {
+    uint64_t key;
+    TextEntry *e;
+    SDL_Color white = { 255, 255, 255, 255 };
+    SDL_Surface *sf, *cv;
+    int W, H;
+
+    key = fnv1a(line) ^ ((uint64_t)(uint32_t)font_cur_size << 32)
+        ^ ((uint64_t)rgba << 1);
+    e = cache_lookup(key);
+    if (e->used) return e;
+
+    // v26.1: SOLID render = 1-bit mono glyphs (GDI TextOut parity); the
+    // tint comes from the vertex color at draw. Binary alpha (0 or 255)
+    // so thin strokes stay FULLY white through the x2 buffer upscale —
+    // the old Blended path dimmed them to gray (owner: "very little
+    // visible" on the difficulty descriptions).
+    sf = TTF_RenderUTF8_Solid(font, line, white);
+    if (sf == NULL) return NULL;
+    cv = NULL;
+    if (sf->format->BytesPerPixel != 1) {
+        cv = SDL_ConvertSurfaceFormat(sf, SDL_PIXELFORMAT_ABGR8888, 0);
+        if (cv == NULL) { SDL_FreeSurface(sf); return NULL; }
+    }
+    W = sf->w; H = sf->h;
+    if (W <= 0 || H <= 0 || W > 2048 || H > 512) {
+        if (cv) SDL_FreeSurface(cv);
+        SDL_FreeSurface(sf);
+        return NULL;
+    }
+    // top-down rows (TTF surfaces are not BMP-flipped); memory RGBA order
+    {
+        int pitch = (cv != NULL) ? cv->pitch : sf->pitch;
+        uint8_t *base = (uint8_t *)((cv != NULL) ? cv->pixels : sf->pixels);
+        uint8_t *flat = (uint8_t *)SDL_malloc((size_t)W * (size_t)H * 4u);
+        int yy;
+        if (flat == NULL) {
+            if (cv) SDL_FreeSurface(cv);
+            SDL_FreeSurface(sf);
+            return NULL;
+        }
+        if (cv != NULL && cv->format->BytesPerPixel != 4) {
+            SDL_free(flat); SDL_FreeSurface(cv); SDL_FreeSurface(sf);
+            return NULL;
+        }
+        for (yy = 0; yy < H; yy++) {
+            uint8_t *srow = base + (size_t)yy * (size_t)pitch;
+            uint8_t *drow = flat + (size_t)yy * (size_t)W * 4u;
+            if (cv != NULL) {
+                int xx;
+                for (xx = 0; xx < W; xx++) {
+                    uint32_t v;
+                    uint8_t r, g, b, a;
+                    memcpy(&v, srow + xx * 4, 4);
+                    SDL_GetRGBA(v, cv->format, &r, &g, &b, &a);
+                    drow[xx * 4 + 0] = r; drow[xx * 4 + 1] = g;
+                    drow[xx * 4 + 2] = b; drow[xx * 4 + 3] = a;
+                }
+            } else {
+                // 1-bit mono mapped to binary alpha: glyph = white/opaque
+                int xx;
+                for (xx = 0; xx < W; xx++) {
+                    uint8_t on = srow[xx];
+                    drow[xx * 4 + 0] = 255; drow[xx * 4 + 1] = 255;
+                    drow[xx * 4 + 2] = 255;
+                    drow[xx * 4 + 3] = (on != 0) ? 255 : 0;
+                }
+            }
+        }
+        SDL_FreeSurface(sf);
+        if (cv) SDL_FreeSurface(cv);
+        glGenTextures(1, &e->tex);
+        glBindTexture(GL_TEXTURE_2D, e->tex);
+        // v25.4 point-sampling parity applies to text too (GDI blits are
+        // unfiltered; the x2 buffer upscale is the game-art NEAREST path)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, W, H, 0, GL_RGBA,
+                     GL_UNSIGNED_BYTE, flat);
+        SDL_free(flat);
+        e->w = W; e->h = H; e->key = key; e->used = 1; e->age = age_ctr++;
+    }
+    return e;
+}
+
 int ewdx_text_draw(const char *sjis, int x, int y) {
     char utf8[1024];
-    uint64_t key;
-    uint32_t rgba;
-    TextEntry *e;
     TTF_Font *font;
-    SDL_Surface *sf, *cv;
     float cr, cg, cb, ca;
+    uint32_t rgba;
     int tgtW, tgtH;
-    float nx0, ny0, nx1, ny1;
+    int line_skip;
+    const char *line;
+    int row = 0;
 
     if (sjis == NULL || sjis[0] == '\0') return -1;
     font = font_for_size(font_cur_size);
@@ -186,102 +274,57 @@ int ewdx_text_draw(const char *sjis, int x, int y) {
     sjis_to_utf8(sjis, utf8, (int)sizeof(utf8));
     if (utf8[0] == '\0') return -1;
 
-    cr = ewdx.st.r / 255.0f; cg = ewdx.st.g / 255.0f;
-    cb = ewdx.st.b / 255.0f; ca = ewdx.st.a / 255.0f;
-    rgba = ((uint32_t)(ewdx.st.r & 0xFF) << 24) | ((uint32_t)(ewdx.st.g & 0xFF) << 16)
-         | ((uint32_t)(ewdx.st.b & 0xFF) << 8) | (uint32_t)(ewdx.st.a & 0xFF);
-    key = fnv1a(utf8) ^ ((uint64_t)(uint32_t)font_cur_size << 32) ^ ((uint64_t)rgba << 1);
-    e = cache_lookup(key);
-    if (!e->used) {
-        // v26.1: SOLID render = 1-bit mono glyphs (GDI TextOut parity); the
-        // tint comes from the vertex color at draw. Binary alpha (0 or 255)
-        // so thin strokes stay FULLY white through the x2 buffer upscale —
-        // the old Blended path dimmed them to gray (owner: "very little
-        // visible" on the difficulty descriptions).
-        SDL_Color white = { 255, 255, 255, 255 };
-        int W, H;
-        sf = TTF_RenderUTF8_Solid(font, utf8, white);
-        if (sf == NULL) return -1;
-        if (sf->format->BytesPerPixel == 1) {
-            // INDEX8 solid surface: index 0 = background (colorkey), else fg.
-            cv = NULL;
-        } else {
-            cv = SDL_ConvertSurfaceFormat(sf, SDL_PIXELFORMAT_ABGR8888, 0);
-            if (cv == NULL) { SDL_FreeSurface(sf); return -1; }
-        }
-        W = sf->w; H = sf->h;
-        if (W <= 0 || H <= 0 || W > 2048 || H > 512) {
-            if (cv) SDL_FreeSurface(cv);
-            SDL_FreeSurface(sf);
-            return -1;
-        }
-        // top-down rows (TTF surfaces are not BMP-flipped); memory RGBA order
-        {
-            int pitch = (cv != NULL) ? cv->pitch : sf->pitch;
-            uint8_t *base = (uint8_t *)((cv != NULL) ? cv->pixels : sf->pixels);
-            uint8_t *flat = (uint8_t *)SDL_malloc((size_t)W * (size_t)H * 4u);
-            int yy;
-            if (flat == NULL) {
-                if (cv) SDL_FreeSurface(cv);
-                SDL_FreeSurface(sf);
-                return -1;
-            }
-            if (cv != NULL && cv->format->BytesPerPixel != 4) {
-                SDL_free(flat); SDL_FreeSurface(cv); SDL_FreeSurface(sf);
-                return -1;
-            }
-            for (yy = 0; yy < H; yy++) {
-                uint8_t *srow = base + (size_t)yy * (size_t)pitch;
-                uint8_t *drow = flat + (size_t)yy * (size_t)W * 4u;
-                if (cv != NULL) {
-                    for (int xx = 0; xx < W; xx++) {
-                        uint32_t v;
-                        uint8_t r, g, b, a;
-                        memcpy(&v, srow + xx * 4, 4);
-                        SDL_GetRGBA(v, cv->format, &r, &g, &b, &a);
-                        drow[xx * 4 + 0] = r; drow[xx * 4 + 1] = g;
-                        drow[xx * 4 + 2] = b; drow[xx * 4 + 3] = a;
-                    }
-                } else {
-                    // 1-bit mono mapped to binary alpha: glyph = white/opaque
-                    for (int xx = 0; xx < W; xx++) {
-                        uint8_t on = srow[xx];
-                        drow[xx * 4 + 0] = 255; drow[xx * 4 + 1] = 255;
-                        drow[xx * 4 + 2] = 255;
-                        drow[xx * 4 + 3] = (on != 0) ? 255 : 0;
-                    }
-                }
-            }
-            SDL_FreeSurface(sf);
-            if (cv) SDL_FreeSurface(cv);
-            glGenTextures(1, &e->tex);
-            glBindTexture(GL_TEXTURE_2D, e->tex);
-            // v25.4 point-sampling parity applies to text too (GDI blits are
-            // unfiltered; the x2 buffer upscale is the game-art NEAREST path)
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, W, H, 0, GL_RGBA,
-                         GL_UNSIGNED_BYTE, flat);
-            SDL_free(flat);
-            e->w = W; e->h = H; e->key = key; e->used = 1; e->age = age_ctr++;
-        }
-    }
+    // v27: DGDRAWTEXT strings embed real '\n' (0x0A) — the chara-select guide
+    // blocks are "[Z](aerial) :\n\n\nDOWN+[X] :" style COLUMN LISTS. SDL_ttf's
+    // Solid mode has no newline support, so the old single-line render sent
+    // every 0x0A to .notdef (the owner's "boxes") and overprinted all columns
+    // into one long strip. GDI TextOut draws per line the same way; the game
+    // builds columns from \n runs. Split + per-line cache + line_skip advance.
     tgtW = (ewdx.target == 0) ? ewdx.scr_w : ewdx.buf[ewdx.target].w;
     tgtH = (ewdx.target == 0) ? ewdx.scr_h : ewdx.buf[ewdx.target].h;
     if (tgtW <= 0) tgtW = ewdx.scr_w;
     if (tgtH <= 0) tgtH = ewdx.scr_h;
     if (tgtW <= 0 || tgtH <= 0) return -1;
-    // same NDC convention as emit_quad ((X+0.5)/W*2-1) so text registers
-    // against sprites drawn at the same coordinates
-    nx0 = ((float)x + 0.5f) / (float)tgtW * 2.0f - 1.0f;
-    ny0 = 1.0f - ((float)y + 0.5f) / (float)tgtH * 2.0f;
-    nx1 = ((float)(x + e->w) + 0.5f) / (float)tgtW * 2.0f - 1.0f;
-    ny1 = 1.0f - ((float)(y + e->h) + 0.5f) / (float)tgtH * 2.0f;
-    ewdx_flush();  // foreign texture: drain batch first
-    ewdx_immediate_quad(e->tex, nx0, ny0, nx1, ny1, 0.0f, 0.0f, 1.0f, 1.0f,
-                        cr, cg, cb, ca);
+
+    cr = ewdx.st.r / 255.0f; cg = ewdx.st.g / 255.0f;
+    cb = ewdx.st.b / 255.0f; ca = ewdx.st.a / 255.0f;
+    rgba = ((uint32_t)(ewdx.st.r & 0xFF) << 24) | ((uint32_t)(ewdx.st.g & 0xFF) << 16)
+         | ((uint32_t)(ewdx.st.b & 0xFF) << 8) | (uint32_t)(ewdx.st.a & 0xFF);
+    line_skip = TTF_FontLineSkip(font);
+
+    line = utf8;
+    for (;;) {
+        int len = (int)strlen(line);
+        const char *nl = (const char *)memchr(line, '\n', (size_t)len);
+        int this_len = (nl != NULL) ? (int)(nl - line) : len;
+        char save = '\0';
+        TextEntry *e;
+        float nx0, ny0, nx1, ny1;
+
+        if (nl != NULL) { save = line[this_len]; ((char *)line)[this_len] = '\0'; }
+        if (this_len > 0) {  // empty line = vertical gap only
+            e = text_line_entry(font, line, rgba);
+            if (e != NULL) {
+                // same NDC convention as emit_quad ((X+0.5)/W*2-1) so text
+                // registers against sprites drawn at the same coordinates
+                nx0 = ((float)x + 0.5f) / (float)tgtW * 2.0f - 1.0f;
+                ny0 = 1.0f - ((float)y + row * line_skip + 0.5f) / (float)tgtH * 2.0f;
+                nx1 = ((float)(x + e->w) + 0.5f) / (float)tgtW * 2.0f - 1.0f;
+                ny1 = 1.0f - ((float)(y + row * line_skip + e->h) + 0.5f) / (float)tgtH * 2.0f;
+                ewdx_flush();  // foreign texture: drain batch first
+                ewdx_immediate_quad(e->tex, nx0, ny0, nx1, ny1,
+                                    0.0f, 0.0f, 1.0f, 1.0f, cr, cg, cb, ca);
+            }
+        }
+        if (nl != NULL) {
+            ((char *)line)[this_len] = save;
+            line = nl + 1;
+            row++;
+            if (row >= 32) break;  // script max is 5; hard cap for safety
+            continue;
+        }
+        break;
+    }
     return -1;
 }
 

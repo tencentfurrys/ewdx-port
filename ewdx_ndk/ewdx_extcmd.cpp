@@ -16,6 +16,7 @@
 #include "ewdx_gles.h"
 #include "ewdx_batch.h"
 #include "ewdx_input.h"
+#include "ewdx_osd.h"   // v27: OSD MENU button = ESC
 #include "ewdx_paths.h"
 #include "ewdx_log.h"
 
@@ -228,7 +229,12 @@ static int ex_cmdfunc(int cmd) {
         int vk = code_getdi(0);
         int down = 0;
         int mask = ewdx_input_buttons();
-        switch (vk) {
+        if (vk == 27) {
+            // v27: OSD MENU button = ESC (the game's pause path is key_esc2
+            // via getkey 27); kept out of the joyg mask on purpose.
+            down = ewdx_osd_esc();
+        }
+        if (down == 0) switch (vk) {
         case 37: down = (mask & EWDX_JOY_LEFT) != 0; break;
         case 38: down = (mask & EWDX_JOY_UP) != 0; break;
         case 39: down = (mask & EWDX_JOY_RIGHT) != 0; break;

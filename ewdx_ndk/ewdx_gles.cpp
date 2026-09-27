@@ -3,6 +3,7 @@
 #include "ewdx_gles.h"
 #include "ewdx_batch.h"
 #include "ewdx_text.h"
+#include "ewdx_osd.h"   // v27: on-screen gamepad overlay (present-time)
 #include "ewdx_paths.h"
 #include "ewdx_boot.h"
 #include <string.h>
@@ -128,6 +129,9 @@ int ewdx_init(void) {
     ewdx.st.scalex = ewdx.st.scaley = 256;
     ewdx.st.a = 255;
     ewdx.st.blend = EWDX_BLEND_ALPHA;
+    // v27: on-screen gamepad texture (after GL context exists on Android;
+    // no-op on desktop and before the window on all paths).
+    ewdx_osd_init();
     return -1;  // HSP convention: -1 ok / 0 fail (stat-ready; see ewdx_dg.h)
 }
 
@@ -408,6 +412,10 @@ int ewdx_present(void) {
             glDisable(GL_SCISSOR_TEST);
         }
     }
+    // v27: on-screen gamepad over the game view, BEFORE the swap. Game state
+    // untouched afterwards matters only for the next frame's first draw, which
+    // the script always re-primes (DGCOLOR/DGGSEL precede every draw chain).
+    ewdx_osd_draw();
     SDL_GL_SwapWindow(ewdx.win);
     if (first) { first = 0; ewdx_boot_journal("first present"); }
     return -1;
@@ -435,6 +443,7 @@ int ewdx_apply_blend(int mode) {
 }
 
 int ewdx_shutdown(void) {
+    ewdx_osd_shutdown();   // v27: frees the OSD disc texture
     ewdx_text_shutdown();  // frees string-cache textures + closes fonts (GL alive)
     for (int i = 1; i < EWDX_MAX_BUFFERS; i++) {
         if (ewdx.buf[i].valid) {

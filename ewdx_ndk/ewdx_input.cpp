@@ -20,6 +20,7 @@
 // fully touchable with no on-screen widgets.
 #include "ewdx_input.h"
 #include "ewdx_gles.h"  // viewport + scr_w/scr_h for game-px conversion
+#include "ewdx_osd.h"   // v27: on-screen gamepad (touch routing, bits)
 
 #include <SDL.h>
 #include <string.h>
@@ -193,13 +194,24 @@ int ewdx_input_poll(void) {
     while (SDL_PollEvent(&ev)) {
         switch (ev.type) {
         case SDL_FINGERDOWN:
-            finger_down(ev.tfinger.fingerId, ev.tfinger.x, ev.tfinger.y);
+            // v27: OSD gamepad gets first refusal — a finger that starts on a
+            // pad control belongs to the pad, not the gesture layer.
+            if (!ewdx_osd_touch_down(ev.tfinger.fingerId, ev.tfinger.x,
+                                     ev.tfinger.y)) {
+                finger_down(ev.tfinger.fingerId, ev.tfinger.x, ev.tfinger.y);
+            }
             break;
         case SDL_FINGERMOTION:
-            finger_move(ev.tfinger.fingerId, ev.tfinger.x, ev.tfinger.y);
+            if (!ewdx_osd_touch_move(ev.tfinger.fingerId, ev.tfinger.x,
+                                     ev.tfinger.y)) {
+                finger_move(ev.tfinger.fingerId, ev.tfinger.x, ev.tfinger.y);
+            }
             break;
         case SDL_FINGERUP:
-            finger_up(ev.tfinger.fingerId);
+            if (!ewdx_osd_touch_up(ev.tfinger.fingerId, ev.tfinger.x,
+                                   ev.tfinger.y)) {
+                finger_up(ev.tfinger.fingerId);
+            }
             break;
         case SDL_KEYDOWN:
         case SDL_KEYUP: {
@@ -216,6 +228,7 @@ int ewdx_input_poll(void) {
         case SDL_CONTROLLERDEVICEREMOVED:
             pad = NULL;  // next poll re-scans; stale handle never touched
             pad_mask = 0;
+            ewdx_osd_set_pad_connected(0);  // v27: on-screen pad returns
             break;
         case SDL_WINDOWEVENT:
             if (ev.window.event == SDL_WINDOWEVENT_SIZE_CHANGED)
@@ -230,6 +243,9 @@ int ewdx_input_poll(void) {
         }
     }
     pad_mask = pad_poll_bits();
+    // v27: the on-screen pad hides while a physical gamepad is connected
+    // (pad_open() ran this poll; presence = handle non-NULL).
+    ewdx_osd_set_pad_connected(pad != NULL);
     return -1;
 }
 
@@ -245,7 +261,9 @@ int ewdx_input_buttons(void) {
     // another (label_198 reads DIGETJOYSTATE, getkey Z and getkey2 edges
     // from the same mask within one script frame).
     if (tap_btn != 0 && SDL_GetTicks() - tap_t0 > EWDX_TAP_HOLD_MS) tap_btn = 0;
-    m = key_mask | pad_mask | tap_btn;
+    // v27: on-screen gamepad bits OR in here (same held-key contract as the
+    // tap: the mask is sampled by joyg, getkey and getkey2 in one frame).
+    m = key_mask | pad_mask | tap_btn | ewdx_osd_buttons();
     primary_drag_px(&dx, &dy);
     if (dx < -EWDX_DEADZONE_PX) m |= EWDX_JOY_LEFT;
     if (dx > EWDX_DEADZONE_PX) m |= EWDX_JOY_RIGHT;

@@ -6,7 +6,23 @@
 > Deeper context lives in `GUIDE.md` (how/why), `ewdx_ndk/README.md` (module map),
 > and `analysis/session-*.md` (per-day forensic logs).
 >
-> Last updated: **2026-09-26 (session II.1, v26.1 mono text)** —
+> Last updated: **2026-09-26 (session III, v27 newlines + gamepad)** —
+> v26.1 OWNER-CONFIRMED ("that's fix"). Two v27 items: (1) chara-select
+> guide garble (boxes + overprint strip) = DGDRAWTEXT strings embed real
+> \n bytes (the guide blocks are COLUMN LISTS: "[Z](aerial) :\n\n\nDOWN+[X] :");
+> SDL_ttf Solid has no newline support -> .notdef boxes + overprint.
+> Fixed: split on \n, per-line mono cache, TTF_FontLineSkip advance.
+> (2) NEW FEATURE: on-screen gamepad (ewdx_osd.cpp) — red joystick
+> bottom-left (analog drag, 8-way), glass diamond bottom-right (red Z /
+> yellow X / blue C / green A) + S/D minis + MENU chip (ESC via getkey
+> 27, never in joyg). One radial-alpha disc texture + vertex tint,
+> drawn at present via ewdx_immediate_quad; finger-id touch routing
+> (input layer asks OSD first — no double-drive); auto-hides when a
+> physical gamepad connects. Gate green, build green, tag
+> v27-2026-09-26-newlines-gamepad verified. Shipped
+> ~/Downloads/ewdx-v27-newlines-gamepad.apk (57,430,633 B); commits
+> local (no token on box, push pending).
+> (session II.1, v26.1 mono text) —
 > v26 DGPOS fix OWNER-CONFIRMED ("it's fixed"), one follow-up: difficulty
 > descriptions rendered "very little visible" — the TTF Blended (gray-AA)
 > glyphs at 12px are ~50% alpha on thin strokes and wash out through the
@@ -308,6 +324,12 @@ Video tooling: ffmpeg NOT installed. Use Python `opencv-python-headless`
    repo as the only durable memory).
 
 ### Session log
+- 2026-09-26 (session III): chara-select garble root-caused (\n in
+  DGDRAWTEXT strings; single-line render) + fixed (per-line split);
+  on-screen gamepad added (ewdx_osd: red stick + 4-color glass diamond
+  + S/D + MENU=ESC; finger-id routing; auto-hide on physical pad).
+  Doc: analysis/session-2026-09-26-v27-newlines-gamepad.md. Shipped
+  ~/Downloads/ewdx-v27-newlines-gamepad.apk.
 - 2026-09-26 (session II.1): owner confirmed v26 text positions; faint
   description text fixed in v26.1 (Blended gray-AA -> Solid 1-bit mono
   glyphs, GDI parity; NEAREST text textures). APK:
