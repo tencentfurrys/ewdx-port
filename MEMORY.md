@@ -6,7 +6,20 @@
 > Deeper context lives in `GUIDE.md` (how/why), `ewdx_ndk/README.md` (module map),
 > and `analysis/session-*.md` (per-day forensic logs).
 >
-> Last updated: **2026-09-27 (session IV, v27.1 OSD fix)** —
+> Last updated: **2026-09-27 (session V, v27.2 relative stick)** —
+> v27.1 OWNER REPORT: "still not responding to my touch just going down"
+> + detail request (GameStop-pad photo). ROOT CAUSE FOUND: the stick knob
+> was ABSOLUTE (knob = touch pos relative to center) — touching the lower
+> half of the base = instant full DOWN. v27.2: RELATIVE drag (grab
+> anchors, knob starts centered, only the delta moves it, release
+> recenters); menus RELEASE all pad effects via menu_seen; "osd:" journal
+> lines for every visibility transition + press/release (touch issues are
+> now diagnosable from ewdx-boot*.log); detail pass: ring + glass + gloss
+> + letter labels (Z/X/C/A, S/D, MENU) via new ewdx_text_label helper.
+> Shipped ~/Downloads/ewdx-v272-osd-rel-detail.apk (57,434,897 B), pushed
+> to apks + master (owner token this session; NOTE: token is now in chat
+> history — owner should rotate when convenient).
+> (session IV, v27.1 OSD fix) —
 > v27 OWNER REPORT: pad never visible + "can't touch the main menu" +
 > 93 healthy v27 logs (VM ready, viewport 2400x1080->[480,0 1440x1080],
 > zero errors — game side CLEAN). Root causes (OSD-only, both mine):
@@ -343,6 +356,12 @@ Video tooling: ffmpeg NOT installed. Use Python `opencv-python-headless`
    repo as the only durable memory).
 
 ### Session log
+- 2026-09-27 (session V): "just going down" root-caused to the ABSOLUTE
+  stick positioning in v27.1 (touching low = instant DOWN). v27.2:
+  relative drag + menu releases pad effects + osd: journaling + detailed
+  glass buttons (ewdx_text_label). Doc:
+  analysis/session-2026-09-27-v272-osd-rel-detail.md. Shipped
+  ewdx-v272-osd-rel-detail.apk; pushed master + apks (owner token).
 - 2026-09-27 (session IV.1): owner supplied fresh PAT; ALL pending work
   pushed — ewdx-port master 3381ed2..53e5fd9 (v26, v26.1, v27, v27.1,
   docs, GUIDE status table) + apks main cfbd8a5..a722a98 (v26/v26.1/v27/

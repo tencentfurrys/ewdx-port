@@ -1,40 +1,34 @@
-// ewdx_osd.cpp - on-screen gamepad overlay (v27). Design notes:
+// ewdx_osd.cpp - on-screen gamepad overlay (v27.2). Design notes:
 //
-// * Geometry is computed in GAME px (640x480 space) then converted to the
-//   real EGL surface through the letterbox viewport, so the pad keeps its
-//   position/size relative to the game view on any device.
-// * One 128x128 radial-alpha disc texture + vertex tint = every control
-//   (stick base, knob, glass buttons, mini buttons, menu chip). Drawn via
-//   ewdx_immediate_quad (the text path's foreign-texture route).
-//   v27.1: the texture builds LAZILY on the first draw (a GL context must be
-//   current — ewdx_init runs before the window/context exist, so building
-//   there produced an invisible pad whose touch zones still worked: the
-//   owner saw nothing but couldn't touch the menu).
-// * Blend: regular alpha (the game's mode 1) for translucent glass bodies;
-//   ewdx_immediate_quad draws with whatever blend is set, so the OSD sets
-//   mode 1 + full-state restore around its draws (present-time: no game
-//   state to disturb).
-// * Hit tests mirror the drawn rects exactly (shared rect helpers — single
-//   source of truth, no see/press drift).
-// * Multi-touch: SDL_FingerID captured per control at down; move/up re-route
-//   by id. One finger per control; OSD-owned fingers never reach the gesture
-//   layer (ewdx_input asks first), so drags don't double-fire.
-// * Stick: knob offset clamped to 14 game px; deadzone 6 px -> direction
-//   bits; diagonal = both bits (8-way, like the keyboard arrows).
-// * MENU button injects ESC via ewdx_osd_esc() (getkey 27 / EXCMD_GETKEY
-//   VK 27 in ewdx_extcmd reads it) — the game's pause path (key_esc2).
-//   It never enters the joyg mask (script compares joyg by equality).
-// * Menu auto-hide (v27.1): every menu row in the game is a 220x28 slice of
-//   buffer 8 drawn at unit scale, white, blend 1, target 4 (L29502 area,
-//   title + options + gallery idle). The batcher reports that signature via
-//   ewdx_osd_menu_seen(); the OSD hides for 1 s after the last sight, so
-//   menu taps land on the game, not the pad (the owner: "i can't touch the
-//   main menu"). Gameplay never draws that signature (beams are additive,
-//   different rects), so the pad stays up in game.
+// * Geometry is computed in GAME px (640x480 space) then mapped through the
+//   SAME NDC convention as emit_quad ((px+0.5)/target_w*2-1); the GL viewport
+//   (still the game letterbox at present time) does the scaling. v27 drew
+//   full-drawable NDC = everything outside NDC range = invisible.
+// * v27.1 lesson: the disc texture must build LAZILY on the first draw (a GL
+//   context must be current). ewdx_init has no context yet.
+// * v27.2 stick: RELATIVE drag. The first touch anchors the knob at center;
+//   only the DRAG DELTA moves it. v27.1 used absolute knob positioning, so
+//   landing a thumb on the lower half of the base = instant full DOWN — the
+//   owner's "just going down". Release recenters.
+// * v27.2 menu safety: ewdx_osd_menu_seen() (fired by the batcher on the
+//   title/options row signature) now RELEASES ALL OSD CONTROLS and hides the
+//   pad for 1 s. The pad can never hold a direction or button on a menu,
+//   whatever state it was in when the menu appeared.
+// * v27.2 observability: visibility transitions, pad connect/remove, and
+//   every OSD press/release are journaled ("osd:" lines in ewdx-boot*.log).
+//   If touch input misbehaves again, the logs show exactly what the OSD
+//   consumed and when.
+// * v27.2 detail pass (owner request + GameStop-pad reference photo): every
+//   control = dark outer ring + colored glass body + offset white gloss
+//   highlight + letter label (Z/X/C/A, S/D, MENU) via ewdx_text_label.
+// * MENU button injects ESC via ewdx_osd_esc() (getkey 27 / VK 27 -> the
+//   game's key_esc2 pause path). Never enters the joyg mask.
 #include "ewdx_osd.h"
 #include "ewdx_gles.h"
 #include "ewdx_batch.h"
+#include "ewdx_text.h"
 #include "ewdx_input.h"
+#include "ewdx_boot.h"
 
 #include <SDL.h>
 #include <GLES2/gl2.h>
@@ -66,29 +60,30 @@ typedef struct { int x, y, w, h; } OsdRect;
 #define STICK_R      46      // stick base radius (game px)
 #define STICK_CX     84      // center x from left edge
 #define STICK_CY     (480 - 92)
-#define STICK_TRAVEL 14      // knob clamp
+#define STICK_TRAVEL 16      // knob clamp (game px, RELATIVE drag)
 #define STICK_DEAD   6.0f    // deadzone (game px)
-#define BTN_R        34      // glass button radius
-#define BTN_D        26      // diamond offset (center distance per axis)
-#define BTN_CX       (640 - 78)
-#define BTN_CY       (480 - 88)
+#define BTN_R        30      // glass button radius
+#define BTN_D        34      // diamond center distance per axis
+#define BTN_CX       (640 - 76)
+#define BTN_CY       (480 - 86)
 #define MINI_R       16
 #define MINI_DX      40      // S/D spacing
 #define MENU_W       64
 #define MENU_H       24
 
+static OsdRect centered_rect(int cx, int cy, int r) {
+    OsdRect r2 = { cx - r, cy - r, r * 2, r * 2 };
+    return r2;
+}
 static OsdRect stick_base_rect(void) {
-    OsdRect r = { STICK_CX - STICK_R, STICK_CY - STICK_R, STICK_R * 2, STICK_R * 2 };
-    return r;
+    return centered_rect(STICK_CX, STICK_CY, STICK_R);
 }
 static OsdRect btn_rect(int dx, int dy) {  // dx/dy in {-BTN_D, 0, BTN_D}
-    OsdRect r = { BTN_CX + dx - BTN_R, BTN_CY + dy - BTN_R, BTN_R * 2, BTN_R * 2 };
-    return r;
+    return centered_rect(BTN_CX + dx, BTN_CY + dy, BTN_R);
 }
 static OsdRect mini_rect(int idx) {        // 0 = S, 1 = D
-    OsdRect r = { BTN_CX - MINI_DX + idx * (MINI_DX * 2) - MINI_R,
-                  BTN_CY - BTN_D - BTN_R - MINI_R - 14, MINI_R * 2, MINI_R * 2 };
-    return r;
+    return centered_rect(BTN_CX - MINI_DX + idx * (MINI_DX * 2),
+                         BTN_CY - BTN_D - BTN_R - MINI_R - 16, MINI_R);
 }
 static OsdRect menu_rect(void) {
     OsdRect r = { 640 - MENU_W - 10, 10, MENU_W, MENU_H };
@@ -106,7 +101,8 @@ static int s_dw, s_dh;                     // drawable snapshot
 
 typedef struct {
     SDL_FingerID id;   // 0 = free
-    float cx, cy;      // stick knob offset in game px
+    float ax, ay;      // v27.2: anchor (grab point relative to base center)
+    float cx, cy;      // knob offset in game px (drag delta, clamped)
 } StickTouch;
 typedef struct {
     SDL_FingerID id;   // 0 = free
@@ -119,9 +115,14 @@ static SDL_FingerID s_menu_id = 0;
 static int s_menu_held = 0;
 static int s_mask = 0;
 static unsigned s_menu_until_ms = 0;  // hidden until this tick (menu seen)
+static int s_vis_state = -1;          // journaled visibility (transitions only)
 
 static int s_menu_mode(void) {
     return SDL_GetTicks() < s_menu_until_ms;
+}
+
+static void osd_journal(const char *msg) {
+    ewdx_boot_journal(msg);
 }
 
 static void snap_geometry(void) {
@@ -136,6 +137,15 @@ static void snap_geometry(void) {
         ewdx_surface_px(&s_dw, &s_dh);
     }
     if (s_dw <= 0 || s_dh <= 0) { s_dw = s_vw; s_dh = s_vh; }
+}
+
+// normalized (0..1, top-left origin, full drawable) -> game px -> rect test
+static int hit(OsdRect r, float nx, float ny) {
+    int px = (int)(nx * (float)s_dw);
+    int py = (int)(ny * (float)s_dh);
+    int gx = (s_vw > 0) ? (px - s_vx) * s_scr_w / s_vw : px;
+    int gy = (s_vh > 0) ? (py - s_vy) * s_scr_h / s_vh : py;
+    return gx >= r.x && gx < r.x + r.w && gy >= r.y && gy < r.y + r.h;
 }
 
 static void recompute_mask(void) {
@@ -153,13 +163,15 @@ static void recompute_mask(void) {
     s_mask = m;
 }
 
-// normalized (0..1, top-left origin, full drawable) -> game px -> rect test
-static int hit(OsdRect r, float nx, float ny) {
-    int px = (int)(nx * (float)s_dw);
-    int py = (int)(ny * (float)s_dh);
-    int gx = (s_vw > 0) ? (px - s_vx) * s_scr_w / s_vw : px;
-    int gy = (s_vh > 0) ? (py - s_vy) * s_scr_h / s_vh : py;
-    return gx >= r.x && gx < r.x + r.w && gy >= r.y && gy < r.y + r.h;
+// Release every control's EFFECT but keep finger ids (their touch_up still
+// routes here and clears cleanly). Called when a menu is detected: the pad
+// must never hold input while a menu is up, whatever happened in game.
+static void release_all_effect(void) {
+    int i;
+    if (s_stick.id != 0) { s_stick.cx = s_stick.cy = 0.0f; }
+    for (i = 0; i < 6; i++) s_btns[i].held = 0;
+    s_menu_held = 0;
+    recompute_mask();
 }
 
 // --- disc texture (radial alpha: hard core + AA edge + glass rim) ---
@@ -213,21 +225,28 @@ void ewdx_osd_init(void) {
 void ewdx_osd_menu_seen(void) {
     // 1000 ms cover: menu frames redraw the signature every frame while a
     // menu is up, so the pad re-hides continuously; the first gameplay
-    // frame (no signature) re-shows it after <=1 s.
+    // frame (no signature) re-shows it after <=1 s. Also RELEASE all held
+    // effects — a menu may appear while the player holds a button (pause
+    // during play); the pad must not feed bits into menu input.
     s_menu_until_ms = SDL_GetTicks() + 1000;
+    release_all_effect();
 }
 
 void ewdx_osd_set_pad_connected(int connected) {
+    int was = s_pad_connected;
     s_pad_connected = connected ? 1 : 0;
+    if (s_pad_connected != was) {
+        char msg[96];
+        snprintf(msg, sizeof(msg), "osd: pad %s",
+                 s_pad_connected ? "connected (overlay hidden)" : "removed (overlay shown)");
+        osd_journal(msg);
+    }
 }
 
-// geometry -> GL NDC corners. CRITICAL (v27.1 fix): emit_quad maps game px
-// through the TARGET dims ((px+0.5)/scr_w*2-1) and the GL VIEWPORT (still the
-// game letterbox rect when the OSD draws) does the scaling to the drawable.
-// The first draft used full-drawable NDC — every control landed outside NDC
-// range: the pad was INVISIBLE while its touch zones still worked (the owner
-// saw nothing but couldn't touch the menu). Draw the OSD exactly like a game
-// sprite: game-px rect -> NDC via target dims; viewport does the rest.
+// --- drawing helpers ---
+
+// game-px rect -> NDC via the emit_quad convention ((px+0.5)/target*2-1);
+// the GL viewport (game letterbox, still active at present) scales it.
 static void to_ndc(OsdRect r, float *ax, float *ay, float *bx, float *by) {
     *ax = ((float)r.x + 0.5f) / (float)s_scr_w * 2.0f - 1.0f;
     *ay = 1.0f - ((float)r.y + 0.5f) / (float)s_scr_h * 2.0f;
@@ -243,6 +262,23 @@ static void draw_disc(OsdRect r, float cr, float cg, float cb, float ca) {
                         cr, cg, cb, ca);
 }
 
+// One detailed glass button (owner reference: real pad photo):
+// dark ring -> colored glass -> white gloss highlight -> letter label.
+static void draw_glass_button(int cx, int cy, int r, float cr, float cg,
+                              float cb, float held, const char *label,
+                              int label_size) {
+    OsdRect rr = centered_rect(cx, cy, r);
+    draw_disc(centered_rect(cx, cy, r + 3), 0.05f, 0.05f, 0.07f, 0.85f);
+    draw_disc(rr, cr, cg, cb, held ? 0.97f : 0.78f);
+    // gloss highlight (upper-left, like a physical button's sheen)
+    draw_disc(centered_rect(cx - r / 3, cy - r / 3, r / 3 + 2),
+              1.0f, 1.0f, 1.0f, held ? 0.55f : 0.35f);
+    if (label != NULL) {
+        ewdx_text_label(label, cx, cy, label_size, 1.0f, 1.0f, 1.0f,
+                        held ? 1.0f : 0.9f);
+    }
+}
+
 void ewdx_osd_draw(void) {
 #ifdef EWDX_OSD_DISABLED
     return;
@@ -250,32 +286,61 @@ void ewdx_osd_draw(void) {
     OsdRect r;
     int old_blend = ewdx.st.blend;
     int old_r = ewdx.st.r, old_g = ewdx.st.g, old_b = ewdx.st.b, old_a = ewdx.st.a;
-    if (!s_inited || s_pad_connected || s_menu_mode()) return;
+    int hidden_menu, vis;
+    if (!s_inited) return;
+    hidden_menu = s_menu_mode();
+    vis = s_pad_connected ? 2 : (hidden_menu ? 1 : 0);
+    if (vis != s_vis_state) {
+        osd_journal(vis == 0 ? "osd: shown (gameplay)"
+                    : vis == 1 ? "osd: hidden (menu rows)"
+                    : "osd: hidden (physical pad)");
+        s_vis_state = vis;
+    }
+    if (vis != 0) return;
     snap_geometry();
     if (s_dw <= 0 || s_dh <= 0) return;
-    if (s_disc == 0) s_disc = make_disc();  // v27.1: lazy (GL context live)
+    if (s_disc == 0) {
+        s_disc = make_disc();  // v27.1: lazy (GL context live here)
+        osd_journal("osd: disc texture built");
+    }
     if (s_disc == 0) return;
     ewdx_flush();
     ewdx_apply_blend(EWDX_BLEND_ALPHA);  // translucent glass (mode 1)
-    // Stick: dark translucent base + red knob (knob offset already in game px)
-    r = stick_base_rect();
-    draw_disc(r, 0.10f, 0.10f, 0.12f, 0.55f);
-    if (s_stick.id != 0) {
-        r.x += (int)s_stick.cx;
-        r.y -= (int)s_stick.cy;
+    // Stick: dark ring + base + red knob (offset = RELATIVE drag delta)
+    draw_disc(centered_rect(STICK_CX, STICK_CY, STICK_R + 3),
+              0.05f, 0.05f, 0.07f, 0.85f);
+    draw_disc(stick_base_rect(), 0.10f, 0.10f, 0.12f, 0.55f);
+    draw_disc(centered_rect(STICK_CX, STICK_CY, STICK_R / 2),
+              0.16f, 0.16f, 0.18f, 0.45f);
+    {
+        int kx = STICK_CX, ky = STICK_CY;
+        if (s_stick.id != 0) {
+            kx += (int)s_stick.cx;
+            ky -= (int)s_stick.cy;
+        }
+        draw_glass_button(kx, ky, (STICK_R * 11) / 20,
+                          0.85f, 0.15f, 0.15f, s_stick.id != 0, NULL, 0);
+        draw_disc(centered_rect(kx, ky - 6, 6), 1.0f, 1.0f, 1.0f, 0.40f);
     }
-    draw_disc(r, 0.85f, 0.15f, 0.15f, 0.90f);
     // Diamond: blue C (left), green A (top), red Z (right), yellow X (bottom)
-    r = btn_rect(-BTN_D, 0); draw_disc(r, 0.20f, 0.45f, 0.95f, 0.85f);
-    r = btn_rect(0, -BTN_D); draw_disc(r, 0.15f, 0.80f, 0.25f, 0.85f);
-    r = btn_rect(BTN_D, 0);  draw_disc(r, 0.95f, 0.20f, 0.20f, 0.90f);
-    r = btn_rect(0, BTN_D);  draw_disc(r, 0.95f, 0.80f, 0.15f, 0.85f);
-    // Mini S/D (held ones brighten via the same tint path)
-    r = mini_rect(0); draw_disc(r, 0.85f, 0.85f, 0.20f, s_btns[4].held ? 0.95f : 0.70f);
-    r = mini_rect(1); draw_disc(r, 0.85f, 0.85f, 0.20f, s_btns[5].held ? 0.95f : 0.70f);
-    // MENU chip
+    draw_glass_button(BTN_CX - BTN_D, BTN_CY, BTN_R,
+                      0.20f, 0.45f, 0.95f, s_btns[2].held != 0, "C", 20);
+    draw_glass_button(BTN_CX, BTN_CY - BTN_D, BTN_R,
+                      0.15f, 0.80f, 0.25f, s_btns[3].held != 0, "A", 20);
+    draw_glass_button(BTN_CX + BTN_D, BTN_CY, BTN_R,
+                      0.95f, 0.20f, 0.20f, s_btns[0].held != 0, "Z", 20);
+    draw_glass_button(BTN_CX, BTN_CY + BTN_D, BTN_R,
+                      0.95f, 0.80f, 0.15f, s_btns[1].held != 0, "X", 20);
+    // Mini S/D
+    draw_glass_button(BTN_CX - MINI_DX, BTN_CY - BTN_D - BTN_R - MINI_R - 16,
+                      MINI_R, 0.85f, 0.85f, 0.20f, s_btns[4].held != 0, "S", 12);
+    draw_glass_button(BTN_CX + MINI_DX, BTN_CY - BTN_D - BTN_R - MINI_R - 16,
+                      MINI_R, 0.85f, 0.85f, 0.20f, s_btns[5].held != 0, "D", 12);
+    // MENU chip (dark pill + label)
     r = menu_rect();
-    draw_disc(r, 0.20f, 0.20f, 0.22f, s_menu_held ? 0.90f : 0.70f);
+    draw_disc(r, 0.20f, 0.20f, 0.22f, s_menu_held ? 0.92f : 0.70f);
+    ewdx_text_label("MENU", 640 - 10 - MENU_W / 2, 10 + MENU_H / 2, 12,
+                    1.0f, 1.0f, 1.0f, 0.95f);
     // Restore game state exactly (present-time hygiene)
     ewdx_apply_blend(old_blend);
     ewdx_color(old_r, old_g, old_b, old_a);
@@ -292,6 +357,7 @@ int ewdx_osd_touch_down(SDL_FingerID id, float x, float y) {
     int i;
     OsdRect r;
     static const int bits[6] = { B_Z, B_X, B_C, B_A, B_S, B_D };
+    static const char *names[6] = { "Z", "X", "C", "A", "S", "D" };
     static const int dxs[4] = { BTN_D, 0, -BTN_D, 0 };
     static const int dys[4] = { 0, BTN_D, 0, -BTN_D };
     if (!s_inited || s_pad_connected || id == 0 || s_menu_mode()) return 0;
@@ -305,12 +371,27 @@ int ewdx_osd_touch_down(SDL_FingerID id, float x, float y) {
     if (hit(r, x, y)) {
         s_menu_id = id;
         s_menu_held = 1;
+        osd_journal("osd: press MENU (ESC)");
         return 1;
     }
     if (s_stick.id == 0 && hit(stick_base_rect(), x, y)) {
+        // v27.2 RELATIVE stick: anchor at the grab point; the knob starts
+        // centered and only the DRAG moves it. Touching the lower half no
+        // longer means instant DOWN.
+        int px = (int)(x * (float)s_dw);
+        int py = (int)(y * (float)s_dh);
+        int gx = (px - s_vx) * s_scr_w / s_vw;
+        int gy = (py - s_vy) * s_scr_h / s_vh;
         s_stick.id = id;
+        s_stick.ax = (float)(gx - STICK_CX);
+        s_stick.ay = (float)(gy - STICK_CY);
         s_stick.cx = s_stick.cy = 0.0f;
-        ewdx_osd_touch_move(id, x, y);  // center-relative jump if off-center
+        {
+            char msg[96];
+            snprintf(msg, sizeof(msg), "osd: stick grab anchor=(%.0f,%.0f)",
+                     s_stick.ax, s_stick.ay);
+            osd_journal(msg);
+        }
         recompute_mask();
         return 1;
     }
@@ -319,6 +400,11 @@ int ewdx_osd_touch_down(SDL_FingerID id, float x, float y) {
             s_btns[i].id = id;
             s_btns[i].held = bits[i];
             recompute_mask();
+            {
+                char msg[64];
+                snprintf(msg, sizeof(msg), "osd: press %s", names[i]);
+                osd_journal(msg);
+            }
             return 1;
         }
     }
@@ -327,6 +413,11 @@ int ewdx_osd_touch_down(SDL_FingerID id, float x, float y) {
             s_btns[i].id = id;
             s_btns[i].held = bits[i];
             recompute_mask();
+            {
+                char msg[64];
+                snprintf(msg, sizeof(msg), "osd: press %s", names[i]);
+                osd_journal(msg);
+            }
             return 1;
         }
     }
@@ -342,14 +433,14 @@ int ewdx_osd_touch_move(SDL_FingerID id, float x, float y) {
     float cx, cy, len;
     if (!s_inited || s_stick.id != id || s_stick.id == 0) return 0;
     if (s_vw <= 0 || s_vh <= 0) { snap_geometry(); }
-    // Convert the touch point to game px relative to the stick center.
+    // v27.2: knob = (touch - base center) - anchor, clamped to travel.
     {
         int px = (int)(x * (float)s_dw);
         int py = (int)(y * (float)s_dh);
         int gx = (px - s_vx) * s_scr_w / s_vw;
         int gy = (py - s_vy) * s_scr_h / s_vh;
-        cx = (float)(gx - STICK_CX);
-        cy = (float)(gy - STICK_CY);
+        cx = (float)(gx - STICK_CX) - s_stick.ax;
+        cy = (float)(gy - STICK_CY) - s_stick.ay;
     }
     len = sqrtf(cx * cx + cy * cy);
     if (len > (float)STICK_TRAVEL) {
@@ -372,17 +463,24 @@ int ewdx_osd_touch_up(SDL_FingerID id, float x, float y) {
     if (s_menu_id == id) {
         s_menu_id = 0;
         s_menu_held = 0;
+        osd_journal("osd: release MENU");
         consumed = 1;
     }
     if (s_stick.id == id) {
         s_stick.id = 0;
         s_stick.cx = s_stick.cy = 0.0f;
+        osd_journal("osd: stick release");
         consumed = 1;
     }
     for (i = 0; i < 6; i++) {
         if (s_btns[i].id == id) {
             s_btns[i].id = 0;
             s_btns[i].held = 0;
+            {
+                char msg[64];
+                snprintf(msg, sizeof(msg), "osd: release btn%d", i);
+                osd_journal(msg);
+            }
             consumed = 1;
         }
     }

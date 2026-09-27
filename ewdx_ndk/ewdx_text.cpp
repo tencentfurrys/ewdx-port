@@ -328,6 +328,40 @@ int ewdx_text_draw(const char *sjis, int x, int y) {
     return -1;
 }
 
+// v27.2: OSD control labels (cosmetic, never fatal). Renders one UTF-8 line
+// centered at (cx,cy) with its own font size + fixed tint, without disturbing
+// the game's font_cur_size or draw state beyond the immediate-quad path's
+// own restore discipline (caller restores blend/color).
+int ewdx_text_label(const char *utf8, int cx, int cy, int size,
+                    float cr, float cg, float cb, float ca) {
+    TTF_Font *font;
+    TextEntry *e;
+    int tgtW, tgtH, old_size;
+    float nx0, ny0, nx1, ny1;
+
+    if (utf8 == NULL || utf8[0] == '\0') return -1;
+    old_size = font_cur_size;
+    font_cur_size = size;
+    font = font_for_size(size);
+    font_cur_size = old_size;
+    if (font == NULL) return -1;
+    tgtW = (ewdx.target == 0) ? ewdx.scr_w : ewdx.buf[ewdx.target].w;
+    tgtH = (ewdx.target == 0) ? ewdx.scr_h : ewdx.buf[ewdx.target].h;
+    if (tgtW <= 0) tgtW = ewdx.scr_w;
+    if (tgtH <= 0) tgtH = ewdx.scr_h;
+    if (tgtW <= 0 || tgtH <= 0) return -1;
+    e = text_line_entry(font, utf8, 0xFFFFFFFFu);
+    if (e == NULL) return -1;
+    nx0 = ((float)(cx - e->w / 2) + 0.5f) / (float)tgtW * 2.0f - 1.0f;
+    ny0 = 1.0f - ((float)(cy - e->h / 2) + 0.5f) / (float)tgtH * 2.0f;
+    nx1 = ((float)(cx - e->w / 2 + e->w) + 0.5f) / (float)tgtW * 2.0f - 1.0f;
+    ny1 = 1.0f - ((float)(cy - e->w / 2 + e->h) + 0.5f) / (float)tgtH * 2.0f;
+    ewdx_flush();
+    ewdx_immediate_quad(e->tex, nx0, ny0, nx1, ny1, 0.0f, 0.0f, 1.0f, 1.0f,
+                        cr, cg, cb, ca);
+    return -1;
+}
+
 void ewdx_text_shutdown(void) {
     int i;
     for (i = 0; i < EWDX_TEXT_CACHE; i++) {

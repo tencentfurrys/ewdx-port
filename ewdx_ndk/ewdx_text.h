@@ -17,6 +17,11 @@
 
 int ewdx_text_font(const char *name, int size);    // DGFONT
 int ewdx_text_draw(const char *sjis, int x, int y);  // DGDRAWTEXT (absolute px)
+// OSD helper (v27.2): white label centered at (cx,cy) in the CURRENT target,
+// own font size (does not disturb font_cur_size), fixed white tint, mono.
+// Returns -1 ok / -1 degraded (labels are cosmetic; never fatal).
+int ewdx_text_label(const char *utf8, int cx, int cy, int size,
+                    float cr, float cg, float cb, float ca);
 void ewdx_text_shutdown(void);  // called from ewdx_shutdown (before SDL_Quit)
 
 // Shared converter: SJIS/CP932 -> UTF-8 (same table as DGDRAWTEXT). Used by
