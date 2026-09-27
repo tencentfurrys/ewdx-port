@@ -19,7 +19,7 @@
 
 // Bump per shipped build; journaled right after "=== run ===" so every
 // collected log positively identifies the binary that produced it.
-#define EWDX_BUILD_TAG "v27.2-2026-09-27-osd-rel-detail"
+#define EWDX_BUILD_TAG "v27.3-2026-09-27-finger0-fix"
 
 #include <stdio.h>
 #include <stdlib.h>

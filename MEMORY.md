@@ -6,7 +6,20 @@
 > Deeper context lives in `GUIDE.md` (how/why), `ewdx_ndk/README.md` (module map),
 > and `analysis/session-*.md` (per-day forensic logs).
 >
-> Last updated: **2026-09-27 (session V, v27.2 relative stick)** —
+> Last updated: **2026-09-27 (session VI, v27.3 fingerId-0 fix)** —
+> v27.2 OWNER REPORT: "still not working" + logs/screenshots. THE BUG:
+> SDL_FingerID 0 is VALID on Android (pointer ids start at 0) and the OSD
+> used id==0 as the free-slot sentinel AND rejected id==0 presses → every
+> FIRST-finger press was dropped ("not responding"), finger-0 releases
+> cleared free slots (25x bogus "release" lines with ZERO "press" lines
+> in the Wlog set — the smoking gun), and the consumed FINGERUP left a
+> stuck gesture finger holding DOWN forever ("just going down").
+> v27.3: explicit used flags on all slots, finger-0 accepted, releases
+> only clear used&&id matches. Screenshots CONFIRM pad renders + menu
+> auto-hide work on device. Shipped ~/Downloads/ewdx-v273-finger0-fix.apk
+> (57,435,313 B), pushed master+apks. LESSON: never use a pointer id as
+> an occupancy sentinel — Android ids start at 0.
+> (session V, v27.2 relative stick) —
 > v27.1 OWNER REPORT: "still not responding to my touch just going down"
 > + detail request (GameStop-pad photo). ROOT CAUSE FOUND: the stick knob
 > was ABSOLUTE (knob = touch pos relative to center) — touching the lower
@@ -356,6 +369,10 @@ Video tooling: ffmpeg NOT installed. Use Python `opencv-python-headless`
    repo as the only durable memory).
 
 ### Session log
+- 2026-09-27 (session VI): owner logs exposed the fingerId-0 sentinel bug
+  (presses dropped, releases matched free slots, stuck DOWN). v27.3 used-
+  flags fix. Doc: analysis/session-2026-09-27-v273-finger0-fix.md.
+  Shipped ewdx-v273-finger0-fix.apk; pushed master + apks.
 - 2026-09-27 (session V): "just going down" root-caused to the ABSOLUTE
   stick positioning in v27.1 (touching low = instant DOWN). v27.2:
   relative drag + menu releases pad effects + osd: journaling + detailed

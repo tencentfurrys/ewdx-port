@@ -100,17 +100,24 @@ static int s_vx, s_vy, s_vw, s_vh;         // letterbox viewport snapshot
 static int s_dw, s_dh;                     // drawable snapshot
 
 typedef struct {
-    SDL_FingerID id;   // 0 = free
+    int used;          // v27.3: explicit occupancy — fingerId 0 is VALID
+                       // (Android pointer ids start at 0; using 0 as the
+                       // free-slot sentinel rejected every first-finger
+                       // press and let touch_up match free slots: the pad
+                       // never responded and stuck-finger DOWN persisted)
+    SDL_FingerID id;
     float ax, ay;      // v27.2: anchor (grab point relative to base center)
     float cx, cy;      // knob offset in game px (drag delta, clamped)
 } StickTouch;
 typedef struct {
-    SDL_FingerID id;   // 0 = free
+    int used;          // v27.3: see StickTouch.used
+    SDL_FingerID id;
     int held;          // bit(s) asserted while this finger is down
 } BtnTouch;
 
 static StickTouch s_stick;
 static BtnTouch s_btns[6];   // Z X C A S D
+static int s_menu_used = 0;
 static SDL_FingerID s_menu_id = 0;
 static int s_menu_held = 0;
 static int s_mask = 0;
@@ -150,16 +157,18 @@ static int hit(OsdRect r, float nx, float ny) {
 
 static void recompute_mask(void) {
     int m = 0, i;
-    if (s_stick.id != 0) {
-        float len = sqrtf(s_stick.cx * s_stick.cx + s_stick.cy * s_stick.cy);
-        if (len > STICK_DEAD) {
-            if (s_stick.cx < -STICK_DEAD) m |= B_LEFT;
-            if (s_stick.cx >  STICK_DEAD) m |= B_RIGHT;
-            if (s_stick.cy < -STICK_DEAD) m |= B_UP;
-            if (s_stick.cy >  STICK_DEAD) m |= B_DOWN;
+    if (!s_menu_mode()) {  // v27.3: a visible menu always zeroes the pad
+        if (s_stick.used) {
+            float len = sqrtf(s_stick.cx * s_stick.cx + s_stick.cy * s_stick.cy);
+            if (len > STICK_DEAD) {
+                if (s_stick.cx < -STICK_DEAD) m |= B_LEFT;
+                if (s_stick.cx >  STICK_DEAD) m |= B_RIGHT;
+                if (s_stick.cy < -STICK_DEAD) m |= B_UP;
+                if (s_stick.cy >  STICK_DEAD) m |= B_DOWN;
+            }
         }
+        for (i = 0; i < 6; i++) m |= s_btns[i].held;
     }
-    for (i = 0; i < 6; i++) m |= s_btns[i].held;
     s_mask = m;
 }
 
@@ -168,7 +177,7 @@ static void recompute_mask(void) {
 // must never hold input while a menu is up, whatever happened in game.
 static void release_all_effect(void) {
     int i;
-    if (s_stick.id != 0) { s_stick.cx = s_stick.cy = 0.0f; }
+    if (s_stick.used) { s_stick.cx = s_stick.cy = 0.0f; }
     for (i = 0; i < 6; i++) s_btns[i].held = 0;
     s_menu_held = 0;
     recompute_mask();
@@ -297,6 +306,7 @@ void ewdx_osd_draw(void) {
         s_vis_state = vis;
     }
     if (vis != 0) return;
+    if (vis != 0) return;
     snap_geometry();
     if (s_dw <= 0 || s_dh <= 0) return;
     if (s_disc == 0) {
@@ -306,7 +316,7 @@ void ewdx_osd_draw(void) {
     if (s_disc == 0) return;
     ewdx_flush();
     ewdx_apply_blend(EWDX_BLEND_ALPHA);  // translucent glass (mode 1)
-    // Stick: dark ring + base + red knob (offset = RELATIVE drag delta)
+    // Stick: dark ring + base + recessed center + red knob (RELATIVE delta)
     draw_disc(centered_rect(STICK_CX, STICK_CY, STICK_R + 3),
               0.05f, 0.05f, 0.07f, 0.85f);
     draw_disc(stick_base_rect(), 0.10f, 0.10f, 0.12f, 0.55f);
@@ -314,12 +324,12 @@ void ewdx_osd_draw(void) {
               0.16f, 0.16f, 0.18f, 0.45f);
     {
         int kx = STICK_CX, ky = STICK_CY;
-        if (s_stick.id != 0) {
+        if (s_stick.used) {
             kx += (int)s_stick.cx;
             ky -= (int)s_stick.cy;
         }
         draw_glass_button(kx, ky, (STICK_R * 11) / 20,
-                          0.85f, 0.15f, 0.15f, s_stick.id != 0, NULL, 0);
+                          0.85f, 0.15f, 0.15f, s_stick.used, NULL, 0);
         draw_disc(centered_rect(kx, ky - 6, 6), 1.0f, 1.0f, 1.0f, 0.40f);
     }
     // Diamond: blue C (left), green A (top), red Z (right), yellow X (bottom)
@@ -360,21 +370,26 @@ int ewdx_osd_touch_down(SDL_FingerID id, float x, float y) {
     static const char *names[6] = { "Z", "X", "C", "A", "S", "D" };
     static const int dxs[4] = { BTN_D, 0, -BTN_D, 0 };
     static const int dys[4] = { 0, BTN_D, 0, -BTN_D };
-    if (!s_inited || s_pad_connected || id == 0 || s_menu_mode()) return 0;
+    // v27.3: id==0 is a VALID finger id (Android pointer ids start at 0).
+    // The old "id == 0 -> reject" guard silently dropped the first finger's
+    // press everywhere; occupancy is tracked by the explicit used flags now.
+    if (!s_inited || s_pad_connected || s_menu_mode()) return 0;
     snap_geometry();
     if (s_dw <= 0 || s_dh <= 0) return 0;
     // Already owned? (defensive: dup downs)
-    if (s_stick.id == id || s_menu_id == id) return 1;
-    for (i = 0; i < 6; i++) if (s_btns[i].id == id) return 1;
+    if ((s_stick.used && s_stick.id == id) ||
+        (s_menu_used && s_menu_id == id)) return 1;
+    for (i = 0; i < 6; i++) if (s_btns[i].used && s_btns[i].id == id) return 1;
     // MENU first (top-right; must not fall through to anything else).
     r = menu_rect();
     if (hit(r, x, y)) {
+        s_menu_used = 1;
         s_menu_id = id;
         s_menu_held = 1;
         osd_journal("osd: press MENU (ESC)");
         return 1;
     }
-    if (s_stick.id == 0 && hit(stick_base_rect(), x, y)) {
+    if (!s_stick.used && hit(stick_base_rect(), x, y)) {
         // v27.2 RELATIVE stick: anchor at the grab point; the knob starts
         // centered and only the DRAG moves it. Touching the lower half no
         // longer means instant DOWN.
@@ -382,21 +397,23 @@ int ewdx_osd_touch_down(SDL_FingerID id, float x, float y) {
         int py = (int)(y * (float)s_dh);
         int gx = (px - s_vx) * s_scr_w / s_vw;
         int gy = (py - s_vy) * s_scr_h / s_vh;
+        s_stick.used = 1;
         s_stick.id = id;
         s_stick.ax = (float)(gx - STICK_CX);
         s_stick.ay = (float)(gy - STICK_CY);
         s_stick.cx = s_stick.cy = 0.0f;
         {
-            char msg[96];
-            snprintf(msg, sizeof(msg), "osd: stick grab anchor=(%.0f,%.0f)",
-                     s_stick.ax, s_stick.ay);
+            char msg[128];
+            snprintf(msg, sizeof(msg), "osd: stick grab id=%llu anchor=(%.0f,%.0f)",
+                     (unsigned long long)id, s_stick.ax, s_stick.ay);
             osd_journal(msg);
         }
         recompute_mask();
         return 1;
     }
     for (i = 0; i < 4; i++) {
-        if (s_btns[i].id == 0 && hit(btn_rect(dxs[i], dys[i]), x, y)) {
+        if (!s_btns[i].used && hit(btn_rect(dxs[i], dys[i]), x, y)) {
+            s_btns[i].used = 1;
             s_btns[i].id = id;
             s_btns[i].held = bits[i];
             recompute_mask();
@@ -409,7 +426,8 @@ int ewdx_osd_touch_down(SDL_FingerID id, float x, float y) {
         }
     }
     for (i = 4; i < 6; i++) {
-        if (s_btns[i].id == 0 && hit(mini_rect(i - 4), x, y)) {
+        if (!s_btns[i].used && hit(mini_rect(i - 4), x, y)) {
+            s_btns[i].used = 1;
             s_btns[i].id = id;
             s_btns[i].held = bits[i];
             recompute_mask();
@@ -431,7 +449,7 @@ int ewdx_osd_touch_move(SDL_FingerID id, float x, float y) {
     return 0;
 #else
     float cx, cy, len;
-    if (!s_inited || s_stick.id != id || s_stick.id == 0) return 0;
+    if (!s_inited || !s_stick.used || s_stick.id != id) return 0;
     if (s_vw <= 0 || s_vh <= 0) { snap_geometry(); }
     // v27.2: knob = (touch - base center) - anchor, clamped to travel.
     {
@@ -460,20 +478,26 @@ int ewdx_osd_touch_up(SDL_FingerID id, float x, float y) {
 #else
     int i, consumed = 0;
     if (!s_inited) return 0;
-    if (s_menu_id == id) {
+    // v27.3: every match requires used && id — a release for finger 0 must
+    // never clear free slots (the old id-sentinel matching spammed bogus
+    // releases and let a stuck gesture finger hold DOWN forever).
+    if (s_menu_used && s_menu_id == id) {
+        s_menu_used = 0;
         s_menu_id = 0;
         s_menu_held = 0;
         osd_journal("osd: release MENU");
         consumed = 1;
     }
-    if (s_stick.id == id) {
+    if (s_stick.used && s_stick.id == id) {
+        s_stick.used = 0;
         s_stick.id = 0;
         s_stick.cx = s_stick.cy = 0.0f;
         osd_journal("osd: stick release");
         consumed = 1;
     }
     for (i = 0; i < 6; i++) {
-        if (s_btns[i].id == id) {
+        if (s_btns[i].used && s_btns[i].id == id) {
+            s_btns[i].used = 0;
             s_btns[i].id = 0;
             s_btns[i].held = 0;
             {
