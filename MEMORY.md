@@ -322,10 +322,12 @@ Video tooling: ffmpeg NOT installed. Use Python `opencv-python-headless`
 - Journaling costs fopen/fclose + MediaStore flush per line → compile OUT
   for gameplay builds (`EWDX_DGCOPY_JOURNAL` / `EWDX_DGLINE_JOURNAL`).
 - LESSON (v9 + v20): the shipped APK binary can be ahead of git. Diff
-  `libmain.so` before rebuilding.
-
-## Security notes
-
+  `libmain.so` before rebuilding.## Security notes
+- 2026-09-27: owner pasted a fresh PAT in chat ("ping this ghp_…VQjCl") to
+  enable the pending pushes; stored in ~/.git-credentials (NOT in the repo),
+  all pending commits + 4 APKs pushed, GUIDE updated. Per the standing
+  incident class below: the token now lives in chat history — owner should
+  revoke it once satisfied and issue the next one fresh.
 - 2026-09-22: a GitHub PAT was pasted into chat by the owner to enable the
   memory push. **It is burned — revoke it** (GitHub → Settings → Developer
   settings → Tokens) and issue a fresh one. Same incident class as the
@@ -341,6 +343,10 @@ Video tooling: ffmpeg NOT installed. Use Python `opencv-python-headless`
    repo as the only durable memory).
 
 ### Session log
+- 2026-09-27 (session IV.1): owner supplied fresh PAT; ALL pending work
+  pushed — ewdx-port master 3381ed2..53e5fd9 (v26, v26.1, v27, v27.1,
+  docs, GUIDE status table) + apks main cfbd8a5..a722a98 (v26/v26.1/v27/
+  v27.1 APKs). Repo + Downloads + apks now all in sync at v27.1.
 - 2026-09-27 (session IV): v27 OSD was invisible (texture built pre-
   context) while its touch zones ate menu taps; fixed lazily + emit_quad
   NDC + menu auto-hide via the batcher's row-signature heartbeat. Doc:
