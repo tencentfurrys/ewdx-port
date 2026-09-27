@@ -219,6 +219,21 @@ int ewdx_screen(int w, int h, int mode) {
     Uint32 flags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE;
     (void)mode;
     ewdx_flush();  // queued quads were mapped against the old size
+    // v28: LOCK LANDSCAPE.
+    //
+    // The manifest already carries screenOrientation="landscape", but SDL
+    // overrides it at runtime: Android_CreateWindow calls through to
+    // SDLActivity.setOrientationBis(), and with NO SDL_HINT_ORIENTATIONS
+    // set and a RESIZABLE window its decision tree lands on
+    // SCREEN_ORIENTATION_FULL_USER -- free rotation, manifest ignored.
+    // That is why rotating the phone rotated the game and threw the
+    // letterboxed view to the top of the screen.
+    //
+    // Naming BOTH landscape edges gives SCREEN_ORIENTATION_SENSOR_LANDSCAPE:
+    // the device may still be flipped 180 degrees (either way up is
+    // comfortable), but portrait is never allowed. Must be set BEFORE
+    // SDL_CreateWindow -- the hint is read during creation, not after.
+    SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
     if (!ewdx.win) {
         ewdx.win = SDL_CreateWindow("EchidnaWarsDX",
             SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, w, h, flags);

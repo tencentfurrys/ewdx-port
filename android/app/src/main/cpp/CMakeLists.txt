@@ -37,6 +37,18 @@ set(EWDX_DIR "../../../../../ewdx_ndk")
 # forensics): identical to the OpenHSP 3dbb872 pin plus a journal hook at
 # every array-overflow throw (ewdx_vm_overflow_journal). Re-sync by copying
 # the pinned file and re-applying the "ewdx:" marked blocks.
+# v27.8: HSP64 is a POINTER-WIDTH switch, not a preference. hsp3struct.h
+# derives PTR32BIT/PTR64BIT from UINTPTR_MAX and warns if HSP64 disagrees,
+# and it selects HSPLPTR = long (64) vs int (32). Defining it on armeabi-v7a
+# would mis-size every HSP label/pointer value in the VM. Gate it on the ABI.
+if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(EWDX_HSP_BITS HSP64)
+    message(STATUS "EWDX: 64-bit ABI (${ANDROID_ABI}) -> HSP64 defined")
+else()
+    set(EWDX_HSP_BITS)
+    message(STATUS "EWDX: 32-bit ABI (${ANDROID_ABI}) -> HSP64 NOT defined")
+endif()
+
 add_library(hsp3core STATIC
     "${OPENHSP_HSP3_DIR}/hsp3.cpp"
     "${EWDX_DIR}/vm/hsp3code.cpp"
@@ -62,7 +74,7 @@ target_include_directories(hsp3core PUBLIC
     "${EWDX_DIR}"
     "../../../../../../SDL2/include"
 )
-target_compile_definitions(hsp3core PUBLIC HSP64 HSP_COM_UNSUPPORTED)
+target_compile_definitions(hsp3core PUBLIC ${EWDX_HSP_BITS} HSP_COM_UNSUPPORTED)
 target_compile_options(hsp3core PRIVATE
     "-include${CMAKE_CURRENT_SOURCE_DIR}/${EWDX_DIR}/ewdx_supio_decl.h"
 )
@@ -98,8 +110,7 @@ set_source_files_properties(
     "../../../../../ewdx_ndk/thirdparty/stb_image_impl.c" PROPERTIES
     COMPILE_OPTIONS "-w"
 )
-# 64-bit HSP VM (silences hsp3struct.h #warning; matches arm64 pointers).
-target_compile_definitions(ewdx PUBLIC HSP64)
+target_compile_definitions(ewdx PUBLIC ${EWDX_HSP_BITS})
 # v17 diagnostics: journal every DGGCOPY (id, dst, src, scale) to the boot
 # journal. OFF for gameplay builds: each line costs fopen/fclose + a JNI
 # MediaStore flush, and in-game every sprite has unique coords so the

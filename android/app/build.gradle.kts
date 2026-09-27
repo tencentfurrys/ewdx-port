@@ -10,19 +10,38 @@ android {
 
     defaultConfig {
         applicationId = "net.dgate.ewdx"
-        minSdk = 24          // GLES2 + OpenSL ES baseline; arm64 needs 21+
+        // v27.8: 21 is the floor for NDK r27; lowering from 24 adds
+        // Android 5.0-6.0 handsets, which is where most surviving
+        // 32-bit ARM devices actually sit.
+        minSdk = 21
         targetSdk = 35
         versionCode = 1
         versionName = "1.0-dx-port"
 
         ndk {
-            abiFilters += "arm64-v8a"
+            // v27.8: 64- and 32-bit ARM in one universal APK. armeabi-v7a
+            // covers older 32-bit handsets; HSP64 is gated per ABI in
+            // src/main/cpp/CMakeLists.txt (it sizes HSP pointers).
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
 
         externalNativeBuild {
             cmake {
                 arguments += "-DANDROID_STL=c++_shared"
             }
+        }
+    }
+
+    signingConfigs {
+        // v27.8: sign with APK Signature Scheme v1 + v2 + v3 explicitly.
+        // v1 (JAR) is what pre-Android-7 devices verify; v2/v3 are what
+        // 7.0+ and 9.0+ prefer. Shipping all three means no installer is
+        // left without a scheme it understands.
+        getByName("debug") {
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
+            enableV4Signing = false   // needs a side-car .idsig; not for sideload
         }
     }
 

@@ -22,6 +22,11 @@ int ewdx_text_draw(const char *sjis, int x, int y);  // DGDRAWTEXT (absolute px)
 // Returns -1 ok / -1 degraded (labels are cosmetic; never fatal).
 int ewdx_text_label(const char *utf8, int cx, int cy, int size,
                     float cr, float cg, float cb, float ca);
+// v27.9: same, but mapped to an EXPLICIT drawable size (screen px).
+// Required by the OSD, which draws under the full-drawable viewport.
+int ewdx_text_label_px(const char *utf8, int cx, int cy, int size,
+                       int dw, int dh,
+                       float cr, float cg, float cb, float ca);
 void ewdx_text_shutdown(void);  // called from ewdx_shutdown (before SDL_Quit)
 
 // Shared converter: SJIS/CP932 -> UTF-8 (same table as DGDRAWTEXT). Used by

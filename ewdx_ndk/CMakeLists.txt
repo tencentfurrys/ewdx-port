@@ -29,8 +29,10 @@ add_library(ewdx STATIC
 #   stack.cpp strbuf.cpp strnote.cpp dpmread.cpp filepack.cpp hsp3utfcnv.cpp
 #   ewdx_supio.cpp (supio port: SJIS utils, POSIX fs, logcat Alerts)
 
-# 64-bit HSP VM (silences hsp3struct.h #warning; matches arm64 pointers).
-target_compile_definitions(ewdx PUBLIC HSP64)
+# v27.8: pointer-width switch, gated per ABI (see the android CMakeLists).
+if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+    target_compile_definitions(ewdx PUBLIC HSP64)
+endif()
 
 # Third-party decoder: silence warnings, slim to pull-from-memory + s16.
 set_source_files_properties(thirdparty/stb_vorbis.c PROPERTIES

@@ -362,6 +362,47 @@ int ewdx_text_label(const char *utf8, int cx, int cy, int size,
     return -1;
 }
 
+
+// v27.9: OSD label in REAL SCREEN px.
+//
+// ewdx_text_label() maps through the CURRENT RENDER TARGET (game space, e.g.
+// 640x480). The OSD does not draw in that space -- it swaps in the FULL
+// drawable viewport before drawing. Feeding it screen-px coords therefore
+// divided by the wrong dimensions: chips near the origin came out at roughly
+// double scale ("HIDE" spilling across the screen), and the button letters at
+// ~(1130,560) mapped past +1.0 in NDC and were clipped away entirely.
+//
+// This variant takes the drawable dims explicitly. It also fixes a real typo
+// carried by the original: ny1 computed its top edge from e->w / 2 instead of
+// e->h / 2, so every glyph quad whose width differed from its height was
+// vertically wrong.
+int ewdx_text_label_px(const char *utf8, int cx, int cy, int size,
+                       int dw, int dh,
+                       float cr, float cg, float cb, float ca) {
+    TTF_Font *font;
+    TextEntry *e;
+    int old_size;
+    float nx0, ny0, nx1, ny1;
+
+    if (utf8 == NULL || utf8[0] == '\0') return -1;
+    if (dw <= 0 || dh <= 0) return -1;
+    old_size = font_cur_size;
+    font_cur_size = size;
+    font = font_for_size(size);
+    font_cur_size = old_size;
+    if (font == NULL) return -1;
+    e = text_line_entry(font, utf8, 0xFFFFFFFFu);
+    if (e == NULL) return -1;
+    nx0 = ((float)(cx - e->w / 2)) / (float)dw * 2.0f - 1.0f;
+    ny0 = 1.0f - ((float)(cy - e->h / 2)) / (float)dh * 2.0f;
+    nx1 = ((float)(cx - e->w / 2 + e->w)) / (float)dw * 2.0f - 1.0f;
+    ny1 = 1.0f - ((float)(cy - e->h / 2 + e->h)) / (float)dh * 2.0f;
+    ewdx_flush();
+    ewdx_immediate_quad(e->tex, nx0, ny0, nx1, ny1, 0.0f, 0.0f, 1.0f, 1.0f,
+                        cr, cg, cb, ca);
+    return 0;
+}
+
 void ewdx_text_shutdown(void) {
     int i;
     for (i = 0; i < EWDX_TEXT_CACHE; i++) {

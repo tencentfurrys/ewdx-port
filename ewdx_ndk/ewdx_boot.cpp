@@ -19,7 +19,7 @@
 
 // Bump per shipped build; journaled right after "=== run ===" so every
 // collected log positively identifies the binary that produced it.
-#define EWDX_BUILD_TAG "v27.4-2026-09-27-osd-screen-size"
+#define EWDX_BUILD_TAG "v28-2026-09-27-landscape-lock"
 
 #include <stdio.h>
 #include <stdlib.h>

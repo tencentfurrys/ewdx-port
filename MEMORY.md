@@ -531,3 +531,54 @@ and fix the corner-black for real (v25.3).
   on DGGCOPY 5; PC-truth-vs-port diff is the path to the mask-quarter fix.
   Both APKs: ~/Downloads/ewdx-v25{3,4}-*.apk; NOT in apks repo yet.
   NEXT: owner PC spy run + Android v25.4 BMPs → v25.5 mask-quarter fix.
+- 2026-09-27 (session J, v27.5 -> v28): OSD look + platform reach. Owner
+  reference = photo of a translucent-button pad. Rendering rebuilt in
+  ewdx_osd.cpp (+522 lines): the old flat tinted disc + hard white blob
+  could never read as plastic because the shader is texture*vertexColor
+  (pure MULTIPLY), so a highlight can never exceed the body tint. Split
+  into shaded-body textures (multiply) + ADDITIVE gloss passes. New
+  textures at a shared 104/128 effective radius (matching s_disc's 52/64
+  core -- mismatched radii made the body overflow its own bezel):
+  s_glass (convex dome, flat face + fast rim rolloff), s_spec (hotspot +
+  bounced lower-right crescent), s_dish (concave, normal flipped inward),
+  s_jewel (TRANSLUCENT: alpha varies with optical path so the scene shows
+  through the thin middle and the rim goes saturated/opaque; brightness
+  peaks lower-right, opposite the specular = lit from within), s_caus
+  (inner scatter, drawn additively in the BUTTON's own hue -- white washes
+  it grey). Stick = dished base + black rubber knob + RED concave top.
+  Controls clamped inside the drawable (the stick hung off the left edge).
+  v27.7 added top-LEFT chips: HIDE/SHOW + skin cycle; chips and MENU stay
+  drawn AND hit-testable while hidden (else SHOW is unreachable), hidden
+  pad controls fall through to the game and assert no joyg bits.
+  v27.8 PLATFORM: armeabi-v7a added alongside arm64-v8a. CRITICAL: HSP64
+  is a POINTER-WIDTH switch (hsp3struct.h derives PTR32/PTR64 from
+  UINTPTR_MAX, warns on mismatch, and picks HSPLPTR long vs int) -- it was
+  defined unconditionally and is now gated on CMAKE_SIZEOF_VOID_P in
+  android/app/src/main/cpp/CMakeLists.txt + ewdx_ndk/CMakeLists.txt.
+  minSdk 24 -> 21 (NDK r27 floor; that is where 32-bit handsets live).
+  Signing: explicit v1+v2+v3 (v4 off, needs a side-car .idsig).
+  OWNER-CONFIRMED RUNNING on a Galaxy J3 Orbit (32-bit). Note APK got
+  SMALLER with an extra ABI: minSdk<23 flips extractNativeLibs=true so
+  libs are compressed rather than page-aligned.
+  v27.9 TEXT BUG (root cause, one fault, two symptoms): ewdx_text_label
+  maps through the CURRENT RENDER TARGET (game space 640x480), but the OSD
+  draws under the FULL-drawable viewport. Chips near the origin rendered
+  at ~2x ("HIDE" spilling over the title); button letters at ~(1130,560)
+  mapped past +1.0 NDC and were clipped away -> buttons looked blank.
+  Added ewdx_text_label_px() taking explicit drawable dims, and fixed a
+  real typo in the original (ny1 used e->w/2 where e->h/2 was meant).
+  FLAT skin removed at owner request: JEWEL (default) + GLASS only.
+  v28 ORIENTATION: manifest already said screenOrientation="landscape" but
+  SDL OVERRODE it -- Android_CreateWindow -> SDLActivity.setOrientationBis,
+  and with no SDL_HINT_ORIENTATIONS set and a RESIZABLE window it picks
+  SCREEN_ORIENTATION_FULL_USER (free rotation). Fixed by setting
+  SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight")
+  BEFORE SDL_CreateWindow (read during creation); manifest aligned to
+  sensorLandscape. Verified in the APK: screenOrientation=6, hint string
+  present in the 32-bit libmain.so.
+  Builds v27.5/.6/.7/.8/.9/v28 shipped via gofile; NOT in the apks repo.
+  Toolchain note: sandbox heredocs AND python literals repeatedly mangle
+  '\!=' into backslash-\!=; build with chr(33) placeholders.
+  NEXT: owner to confirm button letters land centred at thumb size; skin
+  choice is in-memory only (resets to JEWEL each launch) -- persisting it
+  needs a small prefs file next to save.dat.
