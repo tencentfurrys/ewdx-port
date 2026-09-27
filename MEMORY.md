@@ -6,7 +6,18 @@
 > Deeper context lives in `GUIDE.md` (how/why), `ewdx_ndk/README.md` (module map),
 > and `analysis/session-*.md` (per-day forensic logs).
 >
-> Last updated: **2026-09-27 (session VI, v27.3 fingerId-0 fix)** —
+> Last updated: **2026-09-27 (session VII, v27.4 screen-size pad)** —
+> v27.3 OWNER CONFIRMED: "it work now" — pad functional on device. One
+> follow-up: "gamepad is too small" (it was sized in game px inside the
+> letterboxed game view = ~10% of screen height). v27.4: all geometry
+> now derives from the REAL EGL drawable (stick base = 13% of screen
+> height, buttons 8.8%, clamped), OSD draws across the FULL drawable
+> (game letterbox viewport saved/restored around the OSD pass), touch
+> math in screen px. Kept: used-flag slots, relative stick, menu
+> release/auto-hide, journaling, detail pass. Shipped
+> ~/Downloads/ewdx-v274-osd-screen-size.apk (57,436,633 B), pushed
+> master+apks.
+> (session VI, v27.3 fingerId-0 fix) —
 > v27.2 OWNER REPORT: "still not working" + logs/screenshots. THE BUG:
 > SDL_FingerID 0 is VALID on Android (pointer ids start at 0) and the OSD
 > used id==0 as the free-slot sentinel AND rejected id==0 presses → every
@@ -369,6 +380,10 @@ Video tooling: ffmpeg NOT installed. Use Python `opencv-python-headless`
    repo as the only durable memory).
 
 ### Session log
+- 2026-09-27 (session VII): pad resized to REAL SCREEN fractions (13%
+  stick, 8.8% buttons) + full-drawable drawing; doc:
+  analysis/session-2026-09-27-v274-osd-screen-size.md. Shipped
+  ewdx-v274-osd-screen-size.apk; pushed master + apks.
 - 2026-09-27 (session VI): owner logs exposed the fingerId-0 sentinel bug
   (presses dropped, releases matched free slots, stuck DOWN). v27.3 used-
   flags fix. Doc: analysis/session-2026-09-27-v273-finger0-fix.md.
