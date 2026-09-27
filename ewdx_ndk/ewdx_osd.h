@@ -22,6 +22,11 @@ void ewdx_osd_init(void);
 void ewdx_osd_draw(void);
 // Physical gamepad presence (input layer reports; OSD hides when true).
 void ewdx_osd_set_pad_connected(int connected);
+// Menu heartbeat (v27.1): the batcher calls this when it sees the title/
+// options menu row signature (220x28 slice of buffer 8, unit scale, white,
+// blend 1, target 4). The OSD hides for ~1 s after the last sight so taps
+// on menu rows are never eaten by pad controls; gameplay never matches.
+void ewdx_osd_menu_seen(void);
 
 // Touch routing (SDL normalized coords, top-left origin). Each returns 1 if
 // the event was consumed by the OSD (input layer then skips gesture handling

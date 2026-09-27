@@ -6,7 +6,24 @@
 > Deeper context lives in `GUIDE.md` (how/why), `ewdx_ndk/README.md` (module map),
 > and `analysis/session-*.md` (per-day forensic logs).
 >
-> Last updated: **2026-09-26 (session III, v27 newlines + gamepad)** —
+> Last updated: **2026-09-27 (session IV, v27.1 OSD fix)** —
+> v27 OWNER REPORT: pad never visible + "can't touch the main menu" +
+> 93 healthy v27 logs (VM ready, viewport 2400x1080->[480,0 1440x1080],
+> zero errors — game side CLEAN). Root causes (OSD-only, both mine):
+> (1) disc texture built in ewdx_osd_init BEFORE the GL context existed
+> -> invisible pad; (2) touch zones didn't need GL -> they still ate taps
+> near the bottom corners = the menu complaint; (3) NDC math used
+> full-drawable instead of emit_quad's target-dims convention (would
+> have been invisible anyway). v27.1: lazy texture build on first draw,
+> emit_quad-exact NDC, and MENU AUTO-HIDE — the batcher reports the
+> title/options row signature (id=8, 220x28, unit scale, white, blend 1,
+> tgt 4) via ewdx_osd_menu_seen(); pad hides 1 s after the last sight
+> (menus redraw it every frame = pad stays hidden; gameplay never matches
+> = pad shows IN GAME, which was the owner's expectation). Shipped
+> ~/Downloads/ewdx-v271-osd-fix.apk (57,431,057 B); commits local
+> (push pending token). LESSON: any GL resource created outside a live
+> context silently vanishes — init-after-context or lazy-build only.
+> (session III, v27 newlines + gamepad) —
 > v26.1 OWNER-CONFIRMED ("that's fix"). Two v27 items: (1) chara-select
 > guide garble (boxes + overprint strip) = DGDRAWTEXT strings embed real
 > \n bytes (the guide blocks are COLUMN LISTS: "[Z](aerial) :\n\n\nDOWN+[X] :");
@@ -324,6 +341,11 @@ Video tooling: ffmpeg NOT installed. Use Python `opencv-python-headless`
    repo as the only durable memory).
 
 ### Session log
+- 2026-09-27 (session IV): v27 OSD was invisible (texture built pre-
+  context) while its touch zones ate menu taps; fixed lazily + emit_quad
+  NDC + menu auto-hide via the batcher's row-signature heartbeat. Doc:
+  analysis/session-2026-09-27-v271-osd-fix.md. Shipped
+  ~/Downloads/ewdx-v271-osd-fix.apk. Logs: 93/93 v27 healthy.
 - 2026-09-26 (session III): chara-select garble root-caused (\n in
   DGDRAWTEXT strings; single-line render) + fixed (per-line split);
   on-screen gamepad added (ewdx_osd: red stick + 4-color glass diamond

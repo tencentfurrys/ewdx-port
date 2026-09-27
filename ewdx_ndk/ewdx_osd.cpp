@@ -6,6 +6,10 @@
 // * One 128x128 radial-alpha disc texture + vertex tint = every control
 //   (stick base, knob, glass buttons, mini buttons, menu chip). Drawn via
 //   ewdx_immediate_quad (the text path's foreign-texture route).
+//   v27.1: the texture builds LAZILY on the first draw (a GL context must be
+//   current — ewdx_init runs before the window/context exist, so building
+//   there produced an invisible pad whose touch zones still worked: the
+//   owner saw nothing but couldn't touch the menu).
 // * Blend: regular alpha (the game's mode 1) for translucent glass bodies;
 //   ewdx_immediate_quad draws with whatever blend is set, so the OSD sets
 //   mode 1 + full-state restore around its draws (present-time: no game
@@ -20,6 +24,13 @@
 // * MENU button injects ESC via ewdx_osd_esc() (getkey 27 / EXCMD_GETKEY
 //   VK 27 in ewdx_extcmd reads it) — the game's pause path (key_esc2).
 //   It never enters the joyg mask (script compares joyg by equality).
+// * Menu auto-hide (v27.1): every menu row in the game is a 220x28 slice of
+//   buffer 8 drawn at unit scale, white, blend 1, target 4 (L29502 area,
+//   title + options + gallery idle). The batcher reports that signature via
+//   ewdx_osd_menu_seen(); the OSD hides for 1 s after the last sight, so
+//   menu taps land on the game, not the pad (the owner: "i can't touch the
+//   main menu"). Gameplay never draws that signature (beams are additive,
+//   different rects), so the pad stays up in game.
 #include "ewdx_osd.h"
 #include "ewdx_gles.h"
 #include "ewdx_batch.h"
@@ -107,6 +118,11 @@ static BtnTouch s_btns[6];   // Z X C A S D
 static SDL_FingerID s_menu_id = 0;
 static int s_menu_held = 0;
 static int s_mask = 0;
+static unsigned s_menu_until_ms = 0;  // hidden until this tick (menu seen)
+
+static int s_menu_mode(void) {
+    return SDL_GetTicks() < s_menu_until_ms;
+}
 
 static void snap_geometry(void) {
     if (ewdx.scr_w > 0) s_scr_w = ewdx.scr_w;
@@ -119,6 +135,7 @@ static void snap_geometry(void) {
     } else {
         ewdx_surface_px(&s_dw, &s_dh);
     }
+    if (s_dw <= 0 || s_dh <= 0) { s_dw = s_vw; s_dh = s_vh; }
 }
 
 static void recompute_mask(void) {
@@ -187,33 +204,42 @@ void ewdx_osd_init(void) {
     if (s_inited) return;
     memset(&s_stick, 0, sizeof(s_stick));
     memset(s_btns, 0, sizeof(s_btns));
-    s_disc = make_disc();
+    // v27.1: NO texture here — no GL context exists yet during ewdx_init.
+    // make_disc() runs lazily on the first draw (context is current there).
     s_inited = 1;
 #endif
+}
+
+void ewdx_osd_menu_seen(void) {
+    // 1000 ms cover: menu frames redraw the signature every frame while a
+    // menu is up, so the pad re-hides continuously; the first gameplay
+    // frame (no signature) re-shows it after <=1 s.
+    s_menu_until_ms = SDL_GetTicks() + 1000;
 }
 
 void ewdx_osd_set_pad_connected(int connected) {
     s_pad_connected = connected ? 1 : 0;
 }
 
-// geometry -> drawable px (bottom-left origin for GL NDC conversion)
-static void to_surface(OsdRect r, int *sx, int *sy, int *sw, int *sh) {
-    *sw = r.w * s_vw / s_scr_w;
-    *sh = r.h * s_vh / s_scr_h;
-    *sx = s_vx + r.x * s_vw / s_scr_w;
-    *sy = s_vy + (s_scr_h - r.y - r.h) * s_vh / s_scr_h;  // flip Y
+// geometry -> GL NDC corners. CRITICAL (v27.1 fix): emit_quad maps game px
+// through the TARGET dims ((px+0.5)/scr_w*2-1) and the GL VIEWPORT (still the
+// game letterbox rect when the OSD draws) does the scaling to the drawable.
+// The first draft used full-drawable NDC — every control landed outside NDC
+// range: the pad was INVISIBLE while its touch zones still worked (the owner
+// saw nothing but couldn't touch the menu). Draw the OSD exactly like a game
+// sprite: game-px rect -> NDC via target dims; viewport does the rest.
+static void to_ndc(OsdRect r, float *ax, float *ay, float *bx, float *by) {
+    *ax = ((float)r.x + 0.5f) / (float)s_scr_w * 2.0f - 1.0f;
+    *ay = 1.0f - ((float)r.y + 0.5f) / (float)s_scr_h * 2.0f;
+    *bx = ((float)(r.x + r.w) + 0.5f) / (float)s_scr_w * 2.0f - 1.0f;
+    *by = 1.0f - ((float)(r.y + r.h) + 0.5f) / (float)s_scr_h * 2.0f;
 }
 
 static void draw_disc(OsdRect r, float cr, float cg, float cb, float ca) {
-    int sx, sy, sw, sh;
-    float nx0, ny0, nx1, ny1;
+    float ax, ay, bx, by;
     if (s_disc == 0) return;
-    to_surface(r, &sx, &sy, &sw, &sh);
-    nx0 = 2.0f * (float)sx / (float)s_dw - 1.0f;
-    ny0 = 1.0f - 2.0f * (float)sy / (float)s_dh;
-    nx1 = 2.0f * (float)(sx + sw) / (float)s_dw - 1.0f;
-    ny1 = 1.0f - 2.0f * (float)(sy + sh) / (float)s_dh;
-    ewdx_immediate_quad(s_disc, nx0, ny0, nx1, ny1, 0.0f, 0.0f, 1.0f, 1.0f,
+    to_ndc(r, &ax, &ay, &bx, &by);
+    ewdx_immediate_quad(s_disc, ax, ay, bx, by, 0.0f, 0.0f, 1.0f, 1.0f,
                         cr, cg, cb, ca);
 }
 
@@ -224,21 +250,20 @@ void ewdx_osd_draw(void) {
     OsdRect r;
     int old_blend = ewdx.st.blend;
     int old_r = ewdx.st.r, old_g = ewdx.st.g, old_b = ewdx.st.b, old_a = ewdx.st.a;
-    float kx = 0.0f, ky = 0.0f;
-    if (!s_inited || s_pad_connected || s_disc == 0) return;
+    if (!s_inited || s_pad_connected || s_menu_mode()) return;
     snap_geometry();
     if (s_dw <= 0 || s_dh <= 0) return;
+    if (s_disc == 0) s_disc = make_disc();  // v27.1: lazy (GL context live)
+    if (s_disc == 0) return;
     ewdx_flush();
     ewdx_apply_blend(EWDX_BLEND_ALPHA);  // translucent glass (mode 1)
-    // Stick: dark translucent base + red knob
+    // Stick: dark translucent base + red knob (knob offset already in game px)
     r = stick_base_rect();
     draw_disc(r, 0.10f, 0.10f, 0.12f, 0.55f);
     if (s_stick.id != 0) {
-        kx = s_stick.cx * (float)s_vw / (float)s_scr_w;
-        ky = s_stick.cy * (float)s_vh / (float)s_scr_h;
+        r.x += (int)s_stick.cx;
+        r.y -= (int)s_stick.cy;
     }
-    r.x += (int)kx;
-    r.y -= (int)ky;
     draw_disc(r, 0.85f, 0.15f, 0.15f, 0.90f);
     // Diamond: blue C (left), green A (top), red Z (right), yellow X (bottom)
     r = btn_rect(-BTN_D, 0); draw_disc(r, 0.20f, 0.45f, 0.95f, 0.85f);
@@ -269,7 +294,7 @@ int ewdx_osd_touch_down(SDL_FingerID id, float x, float y) {
     static const int bits[6] = { B_Z, B_X, B_C, B_A, B_S, B_D };
     static const int dxs[4] = { BTN_D, 0, -BTN_D, 0 };
     static const int dys[4] = { 0, BTN_D, 0, -BTN_D };
-    if (!s_inited || s_pad_connected || id == 0) return 0;
+    if (!s_inited || s_pad_connected || id == 0 || s_menu_mode()) return 0;
     snap_geometry();
     if (s_dw <= 0 || s_dh <= 0) return 0;
     // Already owned? (defensive: dup downs)

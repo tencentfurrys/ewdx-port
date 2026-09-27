@@ -1,6 +1,7 @@
 // ewdx_batch.cpp - step (c) quad batcher, verbatim port of FUN_10001fa0 math
 #include "ewdx_batch.h"
 #include "ewdx_text.h"
+#include "ewdx_osd.h"   // v27.1: menu heartbeat (auto-hide the on-screen pad)
 #include "ewdx_boot.h"
 #include <SDL.h>
 #include <stdio.h>
@@ -370,6 +371,18 @@ int ewdx_copy_flags(int id, int flags) {
     float dx = (float)m_posx, dy = (float)m_posy;
     float dw = (float)m_rw, dh = (float)m_rh;
     if (flags & 1) { dx -= dw * K_HALF; dy -= dh * K_HALF; }  // centered
+    // v27.1: menu-row heartbeat -> the on-screen gamepad hides on menus.
+    // Signature is EXACTLY the title/options row art: id=8 slice 220x28,
+    // unit scale, white, blend 1, target 4 (decompile L29502/29506 area:
+    // DGPOS 360+t, 200+cnt*45-20 + DGRECT 220,138+c*28,220,28 + DGGCOPY 8).
+    // Gameplay never draws this (beams are additive; menu idle traffic uses
+    // other ids), so the pad only hides where menu rows actually are.
+    if (id == 8 && m_rw == 220 && m_rh == 28 && m_scx == 256.0f &&
+        m_scy == 256.0f && ewdx.st.r == 255 && ewdx.st.g == 255 &&
+        ewdx.st.b == 255 && ewdx.st.a == 255 && ewdx.st.blend == 1 &&
+        ewdx.target == 4) {
+        ewdx_osd_menu_seen();
+    }
 #ifdef EWDX_MAW_JOURNAL
     {
         static unsigned seq = 0;

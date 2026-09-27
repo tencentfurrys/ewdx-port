@@ -19,7 +19,7 @@
 
 // Bump per shipped build; journaled right after "=== run ===" so every
 // collected log positively identifies the binary that produced it.
-#define EWDX_BUILD_TAG "v27-2026-09-26-newlines-gamepad"
+#define EWDX_BUILD_TAG "v27.1-2026-09-27-osd-fix"
 
 #include <stdio.h>
 #include <stdlib.h>
