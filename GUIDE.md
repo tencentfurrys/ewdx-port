@@ -4,6 +4,37 @@ Reverse-engineering + port project: Windows HSP3 game
 **Echidna Wars DX v1.11 (D-Gate/ASIMOFU, 2016–2017)** → Android APK.
 All work below was executed and verified on 2026-09-11/12.
 
+> **2026-09-27 status update (v27.1):** the game runs PLAYABLY on device.
+> Everything through v25.6 is in the session docs + MEMORY.md heartbeat
+> (READ THOSE FIRST — this §0 predates them). v26→v27.1 fixed the text
+> stack end-to-end and added the on-screen gamepad:
+>
+> | Build | What | Evidence |
+> |---|---|---|
+> | v26 | DGDRAWTEXT draws at retained DGPOS (args are HSP padding — all 10
+> call sites pass "320,240"). Fixed floating title guide text + the
+> never-rendered difficulty descriptions (clipped off buffer 5). |
+> analysis/session-2026-09-26-v26-dgpos-drawtext.md |
+> | v26.1 | 1-bit mono text (TTF Solid + HINTING_MONO = GDI TextOut
+> parity, binary alpha, NEAREST text textures). Fixed "very little
+> visible" descriptions. | same doc, appendix |
+> | v27 | Newline-aware text (\n = line split + line-skip advance; the
+> chara-select guide blocks are column lists — boxes/overprint fixed) +
+> on-screen gamepad (ewdx_osd: red stick, 4-color glass diamond, S/D,
+> MENU=ESC). | analysis/session-2026-09-26-v27-newlines-gamepad.md |
+> | v27.1 | OSD fixes: lazy texture build (pre-context GL silently
+> vanished), emit_quad-exact NDC, MENU AUTO-HIDE via the batcher's
+> menu-row signature heartbeat (id=8 220x28 unit-scale white blend-1
+> tgt-4 → ewdx_osd_menu_seen, hides 1 s). Pad hidden on menus, visible
+> in game; menu taps work again. 93 owner logs triaged: game side
+> clean. | analysis/session-2026-09-27-v271-osd-fix.md |
+>
+> Shipped APKs (~/Downloads + tencentfurrys/apks): ewdx-v26-dgpos-drawtext,
+> ewdx-v261-mono-text, ewdx-v27-newlines-gamepad, ewdx-v271-osd-fix.
+> Owner-confirmed: corners (v25.6), text positions (v26), crisp text
+> (v26.1). Text/gamepad fixes verified by build-tag + protocol; owner
+> in-game pad test = next.
+
 ## 0. TL;DR status
 
 - [x] Game binary fully reverse-engineered (PE, imports, HSP3 runtime API)
