@@ -80,4 +80,10 @@ void ewdx_apply_viewport(void);               // viewport := current target dims
 void ewdx_apply_screen_viewport(void);        // target-0 letterbox (full-screen fit)
 void ewdx_surface_px(int *dw, int *dh);       // REAL GL drawable px (EGL on Android)
 
+// v30.1: target-0 FIT vs FULL. 0 = aspect-locked letterbox (historic),
+// 1 = stretch the game across the whole drawable (no bars). Toggled by an
+// OSD chip; ewdx_apply_screen_viewport() reads it.
+void ewdx_set_screen_fill(int fill);
+int  ewdx_get_screen_fill(void);
+
 #endif

@@ -15,8 +15,12 @@
         android:label="EchidnaWarsDX"
         android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
         android:hardwareAccelerated="true">
+
+        <!-- v31: mod launcher is now the entry point. It stages assets/data/
+             on first run (so the native one-shot unpack cannot clobber an
+             applied mod), then hands off to SDLActivity. -->
         <activity
-            android:name="org.libsdl.app.SDLActivity"
+            android:name="net.dgate.ewdx.ModLauncherActivity"
             android:label="EchidnaWarsDX"
             android:exported="true"
             android:launchMode="singleTask"
@@ -27,5 +31,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- The game itself. No LAUNCHER filter any more: it is started by
+             ModLauncherActivity once the chosen mod has been applied. -->
+        <activity
+            android:name="org.libsdl.app.SDLActivity"
+            android:label="EchidnaWarsDX"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode"
+            android:screenOrientation="sensorLandscape" />
     </application>
 </manifest>

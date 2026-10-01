@@ -173,8 +173,21 @@ void ewdx_surface_px(int *dw, int *dh) {
     SDL_GL_GetDrawableSize(ewdx.win, dw, dh);
 }
 
+// v30.1 port: FIT/FULL toggle. The on-screen pad carries a third top-row chip
+// that flips target-0 between "aspect-locked fit" (historic behaviour: bars
+// left over on a ~19.9:9 phone) and "stretch to the whole drawable" (fills the
+// screen). Recovered by bindiff against the shipped v30.1 libmain.so, whose
+// only ewdx_* symbol the repo lacked was this setter/getter pair, alongside the
+// journal string "screen: FULL (stretch to drawable)". One bool, read by the
+// OSD chip and honoured here.
+static int g_screen_fill = 0;      // 0 = FIT (bars), 1 = FULL (stretch)
+
+void ewdx_set_screen_fill(int fill) { g_screen_fill = fill ? 1 : 0; }
+int  ewdx_get_screen_fill(void)    { return g_screen_fill; }
+
 // Recompute the target-0 letterbox subrect against the real drawable size:
-// whole game view scaled to fit, centered, aspect locked.
+// whole game view scaled to fit, centered, aspect locked -- unless FULL is on,
+// in which case the whole drawable is used and the game is stretched to it.
 void ewdx_apply_screen_viewport(void) {
     int dw = 0, dh = 0;
     ewdx_surface_px(&dw, &dh);
@@ -185,12 +198,15 @@ void ewdx_apply_screen_viewport(void) {
     }
     int gw = (ewdx.scr_w > 0) ? ewdx.scr_w : 640;
     int gh = (ewdx.scr_h > 0) ? ewdx.scr_h : 480;
-    if (dw * gh < dh * gw) {           // drawable taller: pillarbox sides
+    if (g_screen_fill) {            // FULL: no bars, game stretched to drawable
+        ewdx.viewport[0] = 0; ewdx.viewport[1] = 0;
+        ewdx.viewport[2] = dw; ewdx.viewport[3] = dh;
+    } else if (dw * gh < dh * gw) { // drawable taller: pillarbox sides
         ewdx.viewport[2] = dw;
         ewdx.viewport[3] = dw * gh / gw;
         ewdx.viewport[0] = 0;
         ewdx.viewport[1] = (dh - ewdx.viewport[3]) / 2;
-    } else {                           // drawable wider (or exact): letterbox
+    } else {                        // drawable wider (or exact): letterbox
         ewdx.viewport[2] = dh * gw / gh;
         ewdx.viewport[3] = dh;
         ewdx.viewport[0] = (dw - ewdx.viewport[2]) / 2;
@@ -198,16 +214,20 @@ void ewdx_apply_screen_viewport(void) {
     }
     {
         // One-shot per geometry: numeric proof in the boot journal.
-        static int last_w = -1, last_h = -1;
-        if (ewdx.viewport[2] != last_w || ewdx.viewport[3] != last_h) {
-            char msg[128];
+        static int last_w = -1, last_h = -1, last_fill = -1;
+        if (ewdx.viewport[2] != last_w || ewdx.viewport[3] != last_h ||
+            g_screen_fill != last_fill) {
+            char msg[144];
             snprintf(msg, sizeof(msg),
-                     "viewport: surface %dx%d game %dx%d -> [%d,%d %dx%d]",
+                     "%sviewport: surface %dx%d game %dx%d -> [%d,%d %dx%d]",
+                     g_screen_fill ? "screen: FULL (stretch to drawable) "
+                                   : "screen: FIT (letterboxed) ",
                      dw, dh, gw, gh, ewdx.viewport[0], ewdx.viewport[1],
                      ewdx.viewport[2], ewdx.viewport[3]);
             ewdx_boot_journal(msg);
             last_w = ewdx.viewport[2];
             last_h = ewdx.viewport[3];
+            last_fill = g_screen_fill;
         }
     }
     ewdx_apply_viewport();

@@ -6,7 +6,56 @@
 > Deeper context lives in `GUIDE.md` (how/why), `ewdx_ndk/README.md` (module map),
 > and `analysis/session-*.md` (per-day forensic logs).
 >
-> Last updated: **2026-09-27 (session VII, v27.4 screen-size pad)** —
+> Last updated: **2026-10-01 (session VIII, v31 mod launcher)** — NEW FEATURE.
+> `ModLauncherActivity` (android/app/src/main/java/net/dgate/ewdx/) is now
+> the LAUNCHER activity; SDLActivity is exported=false and is started by it.
+> **What a mod is:** plain asset replacements. The script resolves everything
+> as `data\<pool>\<name><ext>` (pool in map/mold/mot/music/pic/se), and the
+> whole game already runs out of filesDir/data, so no engine change is needed.
+> Installed mods live in `filesDir/mods/<id>/payload/`; import any .zip via
+> the system picker. **Files are placed by EXTENSION, not folder name** —
+> published packs use folders like `Required MOTS/`, `Covered/Chubby/`,
+> `Skull/` which are NOT pool names (verified against a real 9-mod bundle:
+> 132 assets/2 names in Vivian with 126 variants of m_mon17.bmp; 189 in
+> decorative vore; 6 variant choices in MOT Presets REQUIRED).
+> **Variants:** a filename with >1 candidate in a pack gets a picker; single
+> -variant files apply automatically; long shared path prefixes stripped for
+> display. **A zip containing further zips imports each inner pack as its own
+> mod** — the published bundles are exactly that shape.
+> Apply keeps pristine copies in `filesDir/.modstate/backup/`, so
+> "Reset to Vanilla" is exact and every mod is reversible (mods only
+> add/overwrite, never delete).
+> **FIRST-LAUNCH ORDERING (the subtle part):** the native bootstrap unpacks
+> assets/data/ exactly once behind a `data/.ewdx_ok` marker, so applying a
+> mod before that unpack would be silently overwritten. The launcher stages
+> data/ ITSELF first and writes the same marker, after which the native
+> bootstrap stays out of the way. start.ax / save.dat stay native-side
+> (start.ax needs the SJIS-safe DS backslash patch only the native path does).
+> Also PORTED v30.1's FIT/FULL screen toggle (see below).
+>
+> **THE v28 -> v30.1 GAP (important, the repo's oldest lesson fired again):**
+> the shipped APK in ~/Downloads was **v30.1-2026-09-28-stick-yaxis** while
+> repo HEAD was v28. Per "canonical build source is the latest APK binary,
+> not the git history", ran `analysis/v21_bindiff.py` on the shipped
+> libmain.so BEFORE shipping. Result: exactly one ewdx_* feature the repo
+> lacked — `ewdx_set_screen_fill`/`ewdx_get_screen_fill` (one bool) driving a
+> third top-left OSD chip, journal string "screen: FULL (stretch to
+> drawable)" — i.e. v30.1 lets the pad stretch the game to the whole
+> drawable instead of pillarboxing on a ~19.9:9 phone. Ported rather than
+> regressed; post-fix bindiff = ZERO ewdx_* symbols that v30.1 has and v31
+> lacks. NOTE: also self-inflicted a dep-clone mess this session — a `cd`
+> into a not-yet-created submodule dir failed silently and the following
+> `git remote set-url` + `checkout` ran against the PARENT repo, overwriting
+> the SDL_ttf checkout with freetype's content. Always use absolute
+> `git -C <path>` and assert the checkout's identity before building.
+> Shipped: ~/Downloads/ewdx-v31-mod-launcher.apk (55,336,055 B, build tag
+> v31-2026-10-01-mod-launcher, v1+v2+v3 signed, both ABIs, 590 data files +
+> start.ax + save.dat bundled). Pushed to tencentfurrys/apks @ a934a07.
+> OPEN: .rar mods unsupported (2 of the 9 packs are rar); owner to confirm
+> button letters land centred at thumb size; skin choice is still
+> in-memory only (resets each launch).
+>
+> Last updated previously: **2026-09-27 (session VII, v27.4 screen-size pad)** —
 > v27.3 OWNER CONFIRMED: "it work now" — pad functional on device. One
 > follow-up: "gamepad is too small" (it was sized in game px inside the
 > letterboxed game view = ~10% of screen height). v27.4: all geometry
@@ -380,6 +429,16 @@ Video tooling: ffmpeg NOT installed. Use Python `opencv-python-headless`
    repo as the only durable memory).
 
 ### Session log
+- 2026-10-01 (session VIII, v31): MOD LAUNCHER shipped. Java
+  ModLauncherActivity becomes the launcher entry point; mods = asset
+  replacements placed by extension into filesDir/data, with a variant picker
+  for multi-candidate filenames, bundle-zip support, and exact
+  backup/restore for vanilla. First-launch ordering solved by staging data/
+  from the launcher and writing the same marker the native bootstrap uses.
+  Pre-ship bindiff against the shipped v30.1 APK caught one missing feature
+  (FIT/FULL screen toggle) which was ported instead of regressed — zero
+  regressions remain. Shipped ewdx-v31-mod-launcher.apk (55,336,055 B);
+  pushed apks repo @ a934a07. Owner token used for that push — BURN IT.
 - 2026-09-27 (session VII): pad resized to REAL SCREEN fractions (13%
   stick, 8.8% buttons) + full-drawable drawing; doc:
   analysis/session-2026-09-27-v274-osd-screen-size.md. Shipped

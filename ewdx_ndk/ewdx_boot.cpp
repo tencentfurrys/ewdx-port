@@ -19,7 +19,7 @@
 
 // Bump per shipped build; journaled right after "=== run ===" so every
 // collected log positively identifies the binary that produced it.
-#define EWDX_BUILD_TAG "v28-2026-09-27-landscape-lock"
+#define EWDX_BUILD_TAG "v31-2026-10-01-mod-launcher"
 
 #include <stdio.h>
 #include <stdlib.h>

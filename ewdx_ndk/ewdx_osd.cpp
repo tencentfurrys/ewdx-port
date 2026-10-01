@@ -130,6 +130,11 @@ static OsdRect style_rect(void) {
     OsdRect r = { 14 + menu_w() + 12, 14, menu_w(), menu_h() };
     return r;
 }
+// v30.1: third chip -- FIT/FULL. Left of MENU, right of the skin chip.
+static OsdRect fill_rect(void) {
+    OsdRect r = { 14 + (menu_w() + 12) * 2, 14, menu_w(), menu_h() };
+    return r;
+}
 
 // --- state ---
 
@@ -162,9 +167,14 @@ static int s_style = 0;
 static int s_hidden = 0;
 static int s_hide_used = 0;   static SDL_FingerID s_hide_id = 0;
 static int s_style_used = 0;  static SDL_FingerID s_style_id = 0;
+// v30.1: FIT/FULL chip state (screen fill = stretch-to-drawable).
+static int s_fill_used = 0;   static SDL_FingerID s_fill_id = 0;
 
 static const char *style_name(void) {
     return s_style == 0 ? "JEWEL" : "GLASS";
+}
+static const char *fill_name(void) {
+    return ewdx_get_screen_fill() ? "FULL" : "FIT";
 }
 
 static int s_menu_used = 0;
@@ -699,6 +709,7 @@ void ewdx_osd_draw(void) {
     draw_chip(r, "MENU", s_menu_held);
     draw_chip(hide_rect(), s_hidden ? "SHOW" : "HIDE", s_hide_used);
     draw_chip(style_rect(), style_name(), s_style_used);
+    draw_chip(fill_rect(), fill_name(), s_fill_used);
     // Restore game viewport + state exactly (present-time hygiene)
     glViewport(old_vp[0], old_vp[1], old_vp[2], old_vp[3]);
     ewdx_apply_blend(old_blend);
@@ -735,7 +746,8 @@ int ewdx_osd_touch_down(SDL_FingerID id, float x, float y) {
     if ((s_stick.used && s_stick.id == id) ||
         (s_menu_used && s_menu_id == id) ||
         (s_hide_used && s_hide_id == id) ||
-        (s_style_used && s_style_id == id)) return 1;
+        (s_style_used && s_style_id == id) ||
+        (s_fill_used && s_fill_id == id)) return 1;
     for (i = 0; i < 6; i++) if (s_btns[i].used && s_btns[i].id == id) return 1;
     // v27.7: the top-left chips are tested FIRST and stay live while the
     // pad is hidden -- otherwise SHOW could never be pressed again.
@@ -756,6 +768,17 @@ int ewdx_osd_touch_down(SDL_FingerID id, float x, float y) {
         s_style_id = id;
         s_style = (s_style + 1) % 2;
         snprintf(msg, sizeof(msg), "osd: skin -> %s", style_name());
+        osd_journal(msg);
+        return 1;
+    }
+    if (!s_fill_used && hit(fill_rect(), x, y)) {
+        char msg[64];
+        s_fill_used = 1;
+        s_fill_id = id;
+        ewdx_set_screen_fill(!ewdx_get_screen_fill());
+        // Re-fit immediately so the change is visible on this very frame.
+        ewdx_apply_screen_viewport();
+        snprintf(msg, sizeof(msg), "osd: screen %s", fill_name());
         osd_journal(msg);
         return 1;
     }
@@ -874,6 +897,9 @@ int ewdx_osd_touch_up(SDL_FingerID id, float x, float y) {
     }
     if (s_style_used && s_style_id == id) {
         s_style_used = 0; s_style_id = 0; consumed = 1;
+    }
+    if (s_fill_used && s_fill_id == id) {
+        s_fill_used = 0; s_fill_id = 0; consumed = 1;
     }
     if (s_stick.used && s_stick.id == id) {
         s_stick.used = 0;
